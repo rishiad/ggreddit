@@ -32,7 +32,7 @@ pub struct ServerConfig {
 	pub allow_nsfw: bool,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DomainConfig {
 	pub navigation: Vec<String>,
@@ -142,10 +142,37 @@ impl Config {
 impl Default for ServerConfig {
 	fn default() -> Self {
 		Self {
-			listen: "[::]:8080".into(),
+			listen: "127.0.0.1:8080".into(),
 			web: true,
 			api: true,
 			allow_nsfw: true,
+		}
+	}
+}
+
+impl Default for DomainConfig {
+	fn default() -> Self {
+		Self {
+			navigation: vec!["reddit.com".into(), "*.reddit.com".into()],
+			shortlinks: vec!["redd.it".into()],
+			media: [
+				"i.redd.it",
+				"v.redd.it",
+				"preview.redd.it",
+				"external-preview.redd.it",
+				"packaged-media.redd.it",
+				"redditmedia.com",
+				"*.redditmedia.com",
+				"redditstatic.com",
+				"*.redditstatic.com",
+				"reddituploads.com",
+				"*.reddituploads.com",
+				"reddit-uploaded-media.s3-accelerate.amazonaws.com",
+				"reddit-uploaded-video.s3-accelerate.amazonaws.com",
+			]
+			.into_iter()
+			.map(str::to_owned)
+			.collect(),
 		}
 	}
 }
@@ -202,4 +229,28 @@ pub enum ConfigError {
 	},
 	#[error("domains contain an invalid entry")]
 	Domains(#[source] MediaUrlError),
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use neddit_api::media::MediaSigner;
+
+	#[test]
+	fn default_configuration_renders_reddit_images_without_open_proxy() {
+		let config = Config::load(None).unwrap();
+		assert_eq!(config.server.listen, "127.0.0.1:8080");
+		assert_eq!(config.media.image_display, ImageDisplay::Inline);
+		let signer = MediaSigner::from_secret(&[7; 32]).unwrap().with_domains(config.domain_policy().unwrap());
+		assert!(signer.signed_media_url("https://i.redd.it/qo81j84kpl0i1.jpeg").is_some());
+		assert!(signer.signed_media_url("https://evil.example/image.jpeg").is_none());
+		assert!(signer.signed_media_url("http://127.0.0.1/private").is_none());
+	}
+
+	#[test]
+	fn explicit_empty_media_allowlist_stays_empty() {
+		let config: Config = toml::from_str("[domains]\nmedia = []").unwrap();
+		let signer = MediaSigner::from_secret(&[7; 32]).unwrap().with_domains(config.domain_policy().unwrap());
+		assert!(signer.signed_media_url("https://i.redd.it/photo.jpeg").is_none());
+	}
 }
