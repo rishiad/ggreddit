@@ -1252,6 +1252,7 @@ dependencies = [
 name = "neddit-api"
 version = "0.1.0"
 dependencies = [
+ "ammonia",
  "axum",
  "base64",
  "caseless",
@@ -1261,6 +1262,7 @@ dependencies = [
  "getrandom",
  "hmac",
  "percent-encoding",
+ "pulldown-cmark",
  "regex",
  "rusqlite",
  "santh-bogon",

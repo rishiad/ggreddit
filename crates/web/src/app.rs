@@ -114,7 +114,6 @@ pub async fn front_page(State(service): State<RedditService>, State(signer): Sta
 pub async fn subreddit_feed(
 	State(service): State<RedditService>,
 	State(signer): State<MediaSigner>,
-	State(image_display): State<ImageDisplay>,
 	Path(subreddit): Path<String>,
 	Query(query): Query<FeedQuery>,
 ) -> Result<SubredditTemplate, AppError> {
@@ -143,7 +142,7 @@ pub async fn subreddit_feed(
 	};
 
 	Ok(SubredditTemplate {
-		community: community_view(&community.data, &signer, image_display, has_wiki),
+		community: community_view(&community.data, &signer, has_wiki),
 		items,
 		controls: feed_controls(&format!("/r/{subreddit}"), sort_name, time_name, true),
 		pagination,
@@ -286,7 +285,7 @@ async fn wiki_response(
 	let query = WikiPageQuery { v: query.v, v2: query.v2 };
 	let (community, pages) = tokio::try_join!(service.subreddit_about(&subreddit), service.wiki_pages(&subreddit),)?;
 	let has_wiki = has_public_wiki_pages(&pages);
-	let community = community_view(&community.data, &signer, image_display, has_wiki);
+	let community = community_view(&community.data, &signer, has_wiki);
 	let requested_page = requested_page.map(|page| page.trim_end_matches('/').to_owned());
 
 	let Some(page) = requested_page else {

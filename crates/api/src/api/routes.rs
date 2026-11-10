@@ -54,7 +54,6 @@ pub(super) fn router() -> Router<RedditService> {
 		.route("/r/{subreddit}/comments/{article}/{slug}/{comment}", get(subreddit_post_comment_permalink))
 		.route("/morechildren", get(more_children))
 		.route("/r/{subreddit}/about", get(subreddit_about))
-		.route("/r/{subreddit}/about/rules", get(subreddit_rules))
 		.route("/r/{subreddit}/sidebar", get(subreddit_sidebar))
 		.route("/r/{subreddit}/wiki/pages", get(wiki_pages))
 		.route("/r/{subreddit}/wiki/revisions", get(wiki_revisions))
@@ -140,10 +139,6 @@ async fn comments(service: RedditService, subreddit: Option<String>, article: St
 
 async fn subreddit_about(State(service): State<RedditService>, Path(subreddit): Path<String>) -> Response {
 	respond(service.subreddit_about(&subreddit).await)
-}
-
-async fn subreddit_rules(State(service): State<RedditService>, Path(subreddit): Path<String>) -> Response {
-	respond(service.subreddit_rules(&subreddit).await)
 }
 
 async fn subreddit_sidebar(State(service): State<RedditService>, Path(subreddit): Path<String>) -> Response {

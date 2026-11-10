@@ -514,7 +514,7 @@ pub fn user_profile(user: &User) -> UserProfileView {
 	}
 }
 
-pub fn community_view(subreddit: &Subreddit, signer: &MediaSigner, image_display: ImageDisplay, has_wiki: bool) -> CommunityView {
+pub fn community_view(subreddit: &Subreddit, signer: &MediaSigner, has_wiki: bool) -> CommunityView {
 	let title = if subreddit.title.trim().is_empty() {
 		subreddit.display_name_prefixed.clone()
 	} else {
@@ -522,9 +522,9 @@ pub fn community_view(subreddit: &Subreddit, signer: &MediaSigner, image_display
 	};
 	let public_description = nonempty(subreddit.public_description.trim());
 	let description_html = subreddit
-		.description
+		.description_html
 		.as_deref()
-		.map(|source| markdown::render(source, subreddit.extra.get("media_metadata"), signer, image_display))
+		.map(|html| sanitize_html(html, signer))
 		.and_then(|html| nonempty(&html));
 	let posts_url = format!("/r/{}", subreddit.display_name);
 	CommunityView {
@@ -570,9 +570,14 @@ pub fn wiki_links(subreddit: &str, active_page: Option<&str>, pages: &WikiPageLi
 
 pub fn wiki_view(subreddit: &str, page: &str, wiki: &WikiPage, pages: &WikiPageListing, signer: &MediaSigner, image_display: ImageDisplay) -> WikiView {
 	let title = if page == "index" { "Wiki".into() } else { page.replace(['_', '-'], " ") };
+	let content_html = if wiki.data.extra.get("gql_rendered") == Some(&Value::Bool(true)) {
+		sanitize_html(&wiki.data.content_html, signer)
+	} else {
+		markdown::render(&wiki.data.content_md, wiki.data.extra.get("media_metadata"), signer, image_display)
+	};
 	WikiView {
 		title,
-		content_html: markdown::render(&wiki.data.content_md, wiki.data.extra.get("media_metadata"), signer, image_display),
+		content_html,
 		revision_age: wiki.data.revision_date.map_or_else(String::new, age),
 		show_revision: wiki.data.revision_date.is_some(),
 		links: wiki_links(subreddit, Some(page), pages),
@@ -817,5 +822,27 @@ fn display_author(author: &str) -> String {
 		"[deleted]".into()
 	} else {
 		author.into()
+	}
+}
+
+#[cfg(test)]
+mod sidebar_tests {
+	use super::*;
+
+	#[test]
+	fn community_uses_sanitized_sidebar_html_without_rerendering_markdown() {
+		let subreddit: Subreddit = serde_json::from_value(serde_json::json!({
+			"id":"2s7lj","name":"t5_2s7lj","display_name":"rust","display_name_prefixed":"r/rust",
+			"title":"Rust","public_description":"Example","description":"different **Markdown**",
+			"description_html":"<p><strong>Sidebar</strong></p><script>alert(1)</script>",
+			"community_icon":"","subreddit_type":"public","url":"/r/rust/","created_utc":1.0
+		}))
+		.unwrap();
+		let signer = MediaSigner::random().unwrap();
+		let view = community_view(&subreddit, &signer, false);
+		let html = view.description_html.unwrap();
+		assert!(html.contains("<strong>Sidebar</strong>"));
+		assert!(!html.contains("<script>"));
+		assert!(!html.contains("Markdown"));
 	}
 }

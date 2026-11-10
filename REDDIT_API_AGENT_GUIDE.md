@@ -322,7 +322,6 @@ Useful comment parameters include `sort=confidence|top|new|controversial|old`, `
 
 ```text
 GET /r/{subreddit}/about
-GET /r/{subreddit}/about/rules
 GET /r/{subreddit}/sidebar
 GET /subreddits/popular
 GET /subreddits/new

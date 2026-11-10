@@ -454,7 +454,7 @@ pub(crate) fn cache_key(path: &str) -> String {
 
 fn cache_ttl(path: &str) -> i64 {
 	let path = path.split('?').next().unwrap_or(path);
-	if path.contains("/wiki/") || path.ends_with("/about/rules") {
+	if path.contains("/wiki/") {
 		600
 	} else if path.ends_with("/about") {
 		120

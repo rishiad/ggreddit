@@ -61,6 +61,36 @@ impl RedditService {
 		let json = self.client.json(path).await?;
 		let mut listing = parse_user_comment_listing(&json)?;
 		clear_public_listing_modhash(&mut listing);
+		if !self.content.allows_nsfw() {
+			let names: std::collections::BTreeSet<_> = listing
+				.data
+				.children
+				.iter()
+				.filter_map(|item| match item {
+					PublicThing::Comment(comment) => comment.data.extra.get("subreddit").and_then(serde_json::Value::as_str).map(str::to_owned),
+					_ => None,
+				})
+				.collect();
+			let mut safe = std::collections::BTreeSet::new();
+			for name in names {
+				match self.subreddit_about(&name).await {
+					Ok(_) => {
+						safe.insert(name);
+					}
+					Err(ServiceError::ContentBlocked) => {}
+					Err(error) => return Err(error),
+				}
+			}
+			listing.data.children.retain(|item| match item {
+				PublicThing::Comment(comment) => comment
+					.data
+					.extra
+					.get("subreddit")
+					.and_then(serde_json::Value::as_str)
+					.is_some_and(|name| safe.contains(name)),
+				_ => false,
+			});
+		}
 		self.content.filter_public(&mut listing);
 		Ok(listing)
 	}
@@ -168,7 +198,23 @@ fn validate_info_query(query: &InfoQuery) -> Result<(), ServiceError> {
 }
 
 fn validate_user_history_query(query: &UserHistoryQuery) -> Result<(), ServiceError> {
-	validate_listing_query(&query.listing)?;
+	validate_listing_query_with(&query.listing, |parameter, cursor| {
+		let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, cursor).ok();
+		let decoded = decoded.as_deref().and_then(|bytes| std::str::from_utf8(bytes).ok());
+		let valid = cursor.len() <= 256
+			&& [Some(cursor), decoded]
+				.into_iter()
+				.flatten()
+				.any(|id| (id.starts_with("t1_") || id.starts_with("t3_")) && !id[3..].is_empty() && id[3..].bytes().all(|byte| byte.is_ascii_alphanumeric()));
+		if valid {
+			Ok(())
+		} else {
+			Err(ServiceError::InvalidCursor { parameter, cursor: cursor.into() })
+		}
+	})?;
+	if query.listing.before.is_some() {
+		return Err(invalid_parameter("before", "unsupported by GraphQL user history"));
+	}
 	if query.context.is_some_and(|context| !(2..=10).contains(&context)) {
 		return Err(invalid_parameter("context", &query.context.unwrap_or_default().to_string()));
 	}
@@ -364,19 +410,11 @@ mod user_search_query {
 }
 
 mod subreddit_metadata {
-	use crate::models::{Sidebar, SubredditRules};
-	use crate::parsing::{parse_subreddit_rules, ParseError};
-	use crate::service::reddit::validate_subreddit;
+	use crate::models::Sidebar;
+	use crate::parsing::ParseError;
 	use crate::service::{RedditService, ServiceError};
 
 	impl RedditService {
-		pub async fn subreddit_rules(&self, subreddit: &str) -> Result<SubredditRules, ServiceError> {
-			validate_subreddit(subreddit)?;
-			self.require_safe_subreddit(subreddit).await?;
-			let json = self.client.json(format!("/r/{subreddit}/about/rules")).await?;
-			Ok(parse_subreddit_rules(&json)?)
-		}
-
 		pub async fn subreddit_sidebar(&self, subreddit: &str) -> Result<Sidebar, ServiceError> {
 			let subreddit = self.subreddit_about(subreddit).await?;
 			Ok(Sidebar {
@@ -395,3 +433,27 @@ pub use search_query::{SearchQuery, SearchResultType, SearchSort};
 pub use user_directory_sort::UserDirectorySort;
 pub use user_history_query::{UserHistoryQuery, UserHistoryShow, UserHistorySort, UserHistoryType};
 pub use user_search_query::UserSearchQuery;
+
+#[cfg(test)]
+mod graphql_user_history_tests {
+	use super::*;
+	#[test]
+	fn accepts_bounded_comment_cursors() {
+		let query = UserHistoryQuery {
+			listing: crate::service::ListingQuery {
+				after: Some("dDFfb3B0ZnlxbA==".into()),
+				..Default::default()
+			},
+			..Default::default()
+		};
+		assert!(validate_user_history_query(&query).is_ok());
+		let query = UserHistoryQuery {
+			listing: crate::service::ListingQuery {
+				after: Some("not a cursor".into()),
+				..Default::default()
+			},
+			..Default::default()
+		};
+		assert!(validate_user_history_query(&query).is_err());
+	}
+}
