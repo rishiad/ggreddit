@@ -4,7 +4,6 @@ use std::net::IpAddr;
 
 pub mod api;
 pub mod client;
-pub mod feed;
 pub mod media;
 pub mod models;
 mod parsing;

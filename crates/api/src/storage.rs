@@ -17,8 +17,6 @@ pub enum Error {
 	Unavailable,
 	#[error("storage capacity reached")]
 	Capacity,
-	#[error("shortlink creation rate exceeded")]
-	RateLimited,
 	#[error("unsupported database schema version")]
 	Schema,
 	#[error(transparent)]
@@ -33,7 +31,7 @@ type Job = Box<dyn FnOnce(&mut Connection) + Send>;
 struct Database(mpsc::Sender<Job>);
 
 impl Database {
-	async fn open(path: PathBuf, durable: bool) -> Result<Self, Error> {
+	async fn open(path: PathBuf) -> Result<Self, Error> {
 		if path.as_os_str().is_empty() || path.to_string_lossy() == ":memory:" || path.to_string_lossy().starts_with("file:") {
 			return Err(Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, "storage requires a local file path")));
 		}
@@ -44,17 +42,13 @@ impl Database {
 				if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
 					std::fs::create_dir_all(parent)?;
 				}
-				private_file(&path, false)?;
+				private_file(&path)?;
 				let mut db = Connection::open(path)?;
 				db.busy_timeout(Duration::from_millis(250))?;
-				db.execute_batch(if durable {
-					"PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;"
-				} else {
-					"PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;"
-				})?;
+				db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
 				let version: u32 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
 				let kind: u32 = db.query_row("PRAGMA application_id", [], |r| r.get(0))?;
-				let expected = if durable { 0x4E444646 } else { 0x4E444343 };
+				let expected = 0x4E444343;
 				if version > 1 {
 					return Err(Error::Schema);
 				}
@@ -63,12 +57,7 @@ impl Database {
 				}
 				if version == 0 {
 					let tx = db.transaction()?;
-					tx.execute_batch(if durable {
-						"CREATE TABLE definitions (
-                            id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL UNIQUE,
-                            definition TEXT NOT NULL, created INTEGER NOT NULL
-                        ); CREATE INDEX definitions_created ON definitions(created);"
-					} else {
+					tx.execute_batch(
 						"CREATE TABLE entries (
                             key TEXT PRIMARY KEY, payload BLOB NOT NULL,
                             created INTEGER NOT NULL, expires INTEGER NOT NULL, bytes INTEGER NOT NULL
@@ -81,8 +70,8 @@ impl Database {
                         END;
                         CREATE TRIGGER cache_delete AFTER DELETE ON entries BEGIN
                             UPDATE cache_size SET bytes=bytes-old.bytes;
-                        END;"
-					})?;
+                        END;",
+					)?;
 					tx.execute_batch("PRAGMA user_version=1;")?;
 					tx.pragma_update(None, "application_id", expected)?;
 					tx.commit()?;
@@ -119,9 +108,9 @@ impl Database {
 	}
 }
 
-fn private_file(path: &std::path::Path, exclusive: bool) -> std::io::Result<()> {
+fn private_file(path: &std::path::Path) -> std::io::Result<()> {
 	let mut options = std::fs::OpenOptions::new();
-	options.read(true).write(true).create(true).create_new(exclusive);
+	options.read(true).write(true).create(true);
 	#[cfg(unix)]
 	{
 		use std::os::unix::fs::OpenOptionsExt;
@@ -137,10 +126,6 @@ pub(crate) fn now() -> i64 {
 
 pub(crate) fn fingerprint(value: &[u8]) -> String {
 	format!("{:x}", Sha256::digest(value))
-}
-
-pub(crate) fn id(length: usize) -> String {
-	nanoid::nanoid!(length)
 }
 
 /// Fixed stripes bound lock memory even for adversarial unique requests.
@@ -185,7 +170,7 @@ pub struct Cache {
 
 impl Cache {
 	pub async fn open(config: &CacheConfig) -> Result<Self, Error> {
-		let db = Database::open(config.path.clone(), false).await?;
+		let db = Database::open(config.path.clone()).await?;
 		let disk_limit = config.max_bytes.saturating_mul(2).saturating_add(4 * 1024 * 1024);
 		db.call(move |db| {
 			let page_size: u64 = db.query_row("PRAGMA page_size", [], |r| r.get::<_, u32>(0))?.into();
@@ -283,141 +268,6 @@ impl Cache {
 				tx.commit()?;
 				Ok(())
 			})
-			.await
-	}
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct ShortlinkConfig {
-	pub enabled: bool,
-	pub path: PathBuf,
-	pub base_url: Option<String>,
-	pub id_length: usize,
-	pub max_definitions: u64,
-	pub creations_per_minute: u64,
-}
-
-impl Default for ShortlinkConfig {
-	fn default() -> Self {
-		Self {
-			enabled: true,
-			path: "data/feeds.sqlite".into(),
-			base_url: None,
-			id_length: 10,
-			max_definitions: 100_000,
-			creations_per_minute: 60,
-		}
-	}
-}
-
-impl ShortlinkConfig {
-	pub fn validate(&self) -> Result<(), &'static str> {
-		if !(10..=32).contains(&self.id_length) {
-			return Err("shortlinks.id_length must be between 10 and 32");
-		}
-		if self.max_definitions == 0 || self.creations_per_minute == 0 {
-			return Err("shortlink capacity and creation rate must be positive");
-		}
-		if let Some(base) = &self.base_url {
-			let url = url::Url::parse(base).map_err(|_| "shortlinks.base_url must be an HTTP(S) origin")?;
-			if !matches!(url.scheme(), "http" | "https")
-				|| url.host_str().is_none()
-				|| !url.username().is_empty()
-				|| url.password().is_some()
-				|| url.path() != "/"
-				|| url.query().is_some()
-				|| url.fragment().is_some()
-			{
-				return Err("shortlinks.base_url must be an HTTP(S) origin without credentials, path, query, or fragment");
-			}
-		}
-		Ok(())
-	}
-}
-
-#[derive(Clone)]
-pub struct Shortlinks {
-	db: Database,
-	config: ShortlinkConfig,
-}
-
-impl Shortlinks {
-	pub async fn backup(&self, destination: PathBuf) -> Result<(), Error> {
-		self
-			.db
-			.call(move |source| {
-				// Refuse overwrite, including the live database or one of its aliases.
-				private_file(&destination, true)?;
-				let mut destination = Connection::open(destination)?;
-				let backup = rusqlite::backup::Backup::new(source, &mut destination)?;
-				backup.run_to_completion(100, Duration::from_millis(10), None)?;
-				Ok(())
-			})
-			.await
-	}
-
-	pub async fn open(config: &ShortlinkConfig) -> Result<Self, Error> {
-		config.validate().map_err(|_| Error::Unavailable)?;
-		let mut config = config.clone();
-		config.base_url = config.base_url.map(|base| url::Url::parse(&base).expect("validated origin").to_string());
-		Ok(Self {
-			db: Database::open(config.path.clone(), true).await?,
-			config,
-		})
-	}
-
-	pub fn url(&self, id: &str) -> String {
-		format!("{}/f/{id}", self.config.base_url.as_deref().unwrap_or_default().trim_end_matches('/'))
-	}
-
-	pub(crate) async fn save(&self, definition: String) -> Result<String, Error> {
-		let length = self.config.id_length;
-		self.save_with(definition, move || id(length)).await
-	}
-
-	async fn save_with(&self, definition: String, mut generate: impl FnMut() -> String + Send + 'static) -> Result<String, Error> {
-		let fingerprint = fingerprint(definition.as_bytes());
-		let config = self.config.clone();
-		self
-			.db
-			.call(move |db| {
-				let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-				if let Some(id) = tx.query_row("SELECT id FROM definitions WHERE fingerprint=?1", [&fingerprint], |r| r.get(0)).optional()? {
-					return Ok(id);
-				}
-				let count: i64 = tx.query_row("SELECT count(*) FROM definitions", [], |r| r.get(0))?;
-				if count as u64 >= config.max_definitions {
-					return Err(Error::Capacity);
-				}
-				let recent: i64 = tx.query_row("SELECT count(*) FROM definitions WHERE created>?1", [now() - 60], |r| r.get(0))?;
-				if recent as u64 >= config.creations_per_minute {
-					return Err(Error::RateLimited);
-				}
-				for _ in 0..8 {
-					let id = generate();
-					let inserted = tx.execute(
-						"INSERT INTO definitions VALUES (?1,?2,?3,?4) ON CONFLICT(id) DO NOTHING",
-						params![id, fingerprint, definition, now()],
-					)?;
-					if inserted == 1 {
-						tx.commit()?;
-						return Ok(id);
-					}
-				}
-				Err(Error::Unavailable)
-			})
-			.await
-	}
-
-	pub(crate) async fn get(&self, id: &str) -> Result<Option<String>, Error> {
-		if !(10..=32).contains(&id.len()) || !id.bytes().all(|b| b.is_ascii_alphanumeric()) {
-			return Ok(None);
-		}
-		let id = id.to_owned();
-		self
-			.db
-			.call(move |db| Ok(db.query_row("SELECT definition FROM definitions WHERE id=?1", [id], |r| r.get(0)).optional()?))
 			.await
 	}
 }

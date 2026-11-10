@@ -14,10 +14,6 @@ pub struct RedditService {
 	pub(super) more_children_gate: Arc<Semaphore>,
 	pub(crate) search_sessions: Arc<crate::search::Sessions>,
 	pub(crate) content: ContentPolicy,
-	pub(crate) cache: Option<crate::storage::Cache>,
-	pub(crate) shortlinks: Option<crate::storage::Shortlinks>,
-	pub(crate) feed_flights: crate::storage::Flights,
-	pub(crate) feed_gate: Arc<Semaphore>,
 }
 
 impl RedditService {
@@ -31,21 +27,7 @@ impl RedditService {
 			more_children_gate: Arc::new(Semaphore::new(1)),
 			search_sessions: Arc::new(crate::search::Sessions::default()),
 			content,
-			cache: None,
-			shortlinks: None,
-			feed_flights: Default::default(),
-			feed_gate: Arc::new(Semaphore::new(4)),
 		}
-	}
-
-	pub fn with_storage(mut self, cache: crate::storage::Cache, shortlinks: Option<crate::storage::Shortlinks>) -> Self {
-		self.cache = Some(cache);
-		self.shortlinks = shortlinks;
-		self
-	}
-
-	pub fn shortlinks_enabled(&self) -> bool {
-		self.shortlinks.is_some()
 	}
 
 	pub const fn allows_nsfw(&self) -> bool {
@@ -80,14 +62,6 @@ impl RedditService {
 			return Err(invalid_parameter("sort", sort.as_str()));
 		}
 		self.post_listing(Some(subreddit), sort, query).await
-	}
-
-	pub(crate) async fn feed_posts(&self, subreddits: &str, sort: PostSort, query: &ListingQuery) -> Result<Listing<Thing<Post>>, ServiceError> {
-		validate_subreddit(subreddits)?;
-		if sort == PostSort::Best {
-			return Err(invalid_parameter("sort", sort.as_str()));
-		}
-		self.post_listing(Some(subreddits), sort, query).await
 	}
 
 	pub async fn posts_by_id(&self, names: &str) -> Result<Listing<Thing<Post>>, ServiceError> {

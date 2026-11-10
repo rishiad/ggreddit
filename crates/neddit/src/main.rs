@@ -10,7 +10,7 @@ use neddit_api::{
 	server,
 	server::MediaProxy,
 	service::{ContentPolicy, RedditService},
-	storage::{Cache, Shortlinks},
+	storage::Cache,
 };
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
@@ -23,9 +23,6 @@ struct Args {
 
 	#[arg(long, help = "Validate the configuration and exit")]
 	check_config: bool,
-
-	#[arg(long, value_name = "FILE", conflicts_with = "check_config", help = "Back up feed definitions to a new file and exit")]
-	backup_feeds: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -38,17 +35,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	}
 
 	init_logging(&config.logging)?;
-	if let Some(destination) = args.backup_feeds {
-		Shortlinks::open(&config.shortlinks).await?.backup(destination).await?;
-		info!(event = "feeds.backup_complete", "feed backup completed");
-		return Ok(());
-	}
 	info!(
 		event = "service.starting",
 		version = env!("CARGO_PKG_VERSION"),
 		web = config.server.web,
 		api = config.server.api,
-		custom_feeds = config.server.custom_feeds,
 		allow_nsfw = config.server.allow_nsfw,
 		video_enabled = config.video.enabled,
 		"starting neddit"
@@ -69,24 +60,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	.with_domains(domains.clone())
 	.with_content_policy(config.server.allow_nsfw);
 	let cache = Cache::open(&config.cache).await?;
-	let shortlinks = if config.server.custom_feeds && config.shortlinks.enabled {
-		Some(Shortlinks::open(&config.shortlinks).await?)
-	} else {
-		None
-	};
 	let reddit = RedditClient::new().await?.with_cache(cache.clone());
-	let service = RedditService::with_content_policy(reddit.clone(), ContentPolicy::new(config.server.allow_nsfw)).with_storage(cache, shortlinks);
+	let service = RedditService::with_content_policy(reddit.clone(), ContentPolicy::new(config.server.allow_nsfw));
 	let video_exclusions = config.video_exclusions()?;
 	let video = config.video.enabled.then(|| VideoResolver::new(&config.video.executable, video_exclusions));
 	let media = MediaProxy::new(reddit.clone(), signer, video);
-	let app = neddit::router(
-		service,
-		&media,
-		config.media.image_display,
-		config.server.web,
-		config.server.api,
-		config.server.custom_feeds,
-	);
+	let app = neddit::router(service, &media, config.media.image_display, config.server.web, config.server.api);
 
 	info!(event = "service.ready", %address, version = env!("CARGO_PKG_VERSION"), "neddit is ready");
 	let result = server::serve(app, listener).await;

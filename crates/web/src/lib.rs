@@ -1,7 +1,6 @@
 #![forbid(unsafe_code)]
 
 mod app;
-mod custom_feed;
 mod error;
 mod markdown;
 mod search;
@@ -44,12 +43,6 @@ struct WebState {
 	signer: MediaSigner,
 	media: MediaProxy,
 	image_display: ImageDisplay,
-	features: WebFeatures,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct WebFeatures {
-	pub custom_feeds_enabled: bool,
 }
 
 impl FromRef<WebState> for RedditService {
@@ -76,20 +69,13 @@ impl FromRef<WebState> for ImageDisplay {
 	}
 }
 
-impl FromRef<WebState> for WebFeatures {
-	fn from_ref(state: &WebState) -> Self {
-		state.features
-	}
-}
-
-pub fn router(service: RedditService, media: MediaProxy, image_display: ImageDisplay, custom_feeds_enabled: bool) -> Router {
+pub fn router(service: RedditService, media: MediaProxy, image_display: ImageDisplay) -> Router {
 	let video_enabled = media.video_enabled();
 	let state = WebState {
 		service,
 		signer: media.signer().clone(),
 		media: media.clone(),
 		image_display,
-		features: WebFeatures { custom_feeds_enabled },
 	};
 	let mut app = Router::new()
 		.route("/", get(app::front_page))
@@ -112,33 +98,20 @@ pub fn router(service: RedditService, media: MediaProxy, image_display: ImageDis
 		.route("/r/{subreddit}/comments/{article}/{slug}", get(app::post_comments))
 		.route("/r/{subreddit}/comments/{article}/{slug}/", get(app::post_comments))
 		.route("/r/{subreddit}/comments/{article}/{slug}/{comment}", get(app::post_comments));
-	if custom_feeds_enabled {
-		app = app
-			.route(
-				"/feeds",
-				get(custom_feed::builder).post(custom_feed::create).layer(axum::extract::DefaultBodyLimit::max(16 * 1024)),
-			)
-			.route("/feed", get(custom_feed::page))
-			.route("/f/{id}", get(custom_feed::saved));
-	}
 	if video_enabled {
 		app = app.route("/media/video/player", get(app::video_player));
 	}
 	let app = app
 		.with_state(state)
-		.merge(system_routes(custom_feeds_enabled))
+		.merge(system_routes())
 		.merge(neddit_api::server::with_middleware(neddit_api::server::router(media)));
 	#[cfg(debug_assertions)]
 	let app = app.layer(LiveReloadLayer::new());
 	app.layer(CompressionLayer::new()).layer(middleware::from_fn(security_headers))
 }
 
-fn system_routes(custom_feeds_enabled: bool) -> Router {
-	let mut router = health_router().route("/assets/app.css", get(stylesheet)).route("/search/controls", get(search::controls));
-	if custom_feeds_enabled {
-		router = router.route("/feeds/controls", get(custom_feed::controls));
-	}
-	router
+fn system_routes() -> Router {
+	health_router().route("/assets/app.css", get(stylesheet)).route("/search/controls", get(search::controls))
 }
 
 pub fn health_router() -> Router {

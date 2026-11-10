@@ -8,7 +8,7 @@ use serde::Deserialize;
 use thiserror::Error;
 
 use neddit_api::media::{DomainPolicy, DomainSet, MediaUrlError};
-use neddit_api::storage::{CacheConfig, ShortlinkConfig};
+use neddit_api::storage::CacheConfig;
 use neddit_web::ImageDisplay;
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -20,7 +20,6 @@ pub struct Config {
 	pub video: VideoConfig,
 	pub logging: LoggingConfig,
 	pub cache: CacheConfig,
-	pub shortlinks: ShortlinkConfig,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -31,7 +30,6 @@ pub struct ServerConfig {
 	pub web: bool,
 	pub api: bool,
 	pub allow_nsfw: bool,
-	pub custom_feeds: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -93,17 +91,14 @@ impl Config {
 	}
 
 	fn validate(&self) -> Result<(), ConfigError> {
-		self.shortlinks.validate().map_err(ConfigError::Storage)?;
 		if self.cache.max_bytes < 4 * 1024 * 1024 || self.cache.max_bytes > 1024 * 1024 * 1024 * 1024 {
 			return Err(ConfigError::Storage("cache.max_bytes must be between 4 MiB and 1 TiB"));
 		}
-		if self.cache.path.as_os_str().is_empty() || self.shortlinks.path.as_os_str().is_empty() || self.cache.path == self.shortlinks.path {
-			return Err(ConfigError::Storage("cache.path and shortlinks.path must be nonempty and distinct"));
+		if self.cache.path.as_os_str().is_empty() {
+			return Err(ConfigError::Storage("cache.path must not be empty"));
 		}
-		for path in [&self.cache.path, &self.shortlinks.path] {
-			if path.to_string_lossy() == ":memory:" || path.to_string_lossy().starts_with("file:") {
-				return Err(ConfigError::Storage("storage paths must name local files, not SQLite memory databases or URIs"));
-			}
+		if self.cache.path.to_string_lossy() == ":memory:" || self.cache.path.to_string_lossy().starts_with("file:") {
+			return Err(ConfigError::Storage("storage paths must name local files, not SQLite memory databases or URIs"));
 		}
 		if !self.server.web && !self.server.api {
 			return Err(ConfigError::NoSurface);
@@ -151,7 +146,6 @@ impl Default for ServerConfig {
 			web: true,
 			api: true,
 			allow_nsfw: true,
-			custom_feeds: true,
 		}
 	}
 }

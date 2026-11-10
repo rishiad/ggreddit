@@ -1091,11 +1091,7 @@ a:focus-visible {
 
 .search-query input,
 .search-query button,
-.search-form select,
-.feed-form input[type="search"],
-.feed-form input[type="text"],
-.feed-submit,
-.feed-shortlink-submit {
+.search-form select {
   min-height: 2rem;
   border: 1px solid rgb(51 51 51 / 35%);
   border-radius: 2px;
@@ -1105,96 +1101,14 @@ a:focus-visible {
 }
 
 .search-query input,
-.search-form select,
-.feed-form input[type="search"],
-.feed-form input[type="text"] {
+.search-form select {
   padding: 0.25em 0.4em;
 }
 
-.search-query button,
-.feed-submit,
-.feed-shortlink-submit {
+.search-query button {
   padding: 0.25em 0.8em;
   cursor: pointer;
   font-weight: bold;
-}
-
-.feed-form {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.feed-field {
-  display: grid;
-  grid-template-columns: 8.5rem minmax(0, 1fr);
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.feed-field > label {
-  font-weight: bold;
-}
-
-.feed-field > input {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-}
-
-.feed-field > select {
-  justify-self: start;
-}
-
-.feed-pool-values {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.feed-checkbox {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  width: fit-content;
-}
-
-.feed-submit,
-.feed-shortlink-submit {
-  width: fit-content;
-}
-
-.feed-share {
-  display: grid;
-  gap: 0.75rem;
-  max-width: 45rem;
-  margin: 1.5em 0;
-}
-
-.feed-share-field {
-  display: grid;
-  gap: 0.25rem;
-}
-
-.feed-share-field > label {
-  font-weight: bold;
-}
-
-.feed-share input {
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 2rem;
-  border: 1px solid rgb(51 51 51 / 35%);
-  border-radius: 2px;
-  padding: 0.25em 0.4em;
-  background: var(--background);
-  color: var(--text);
-  font: inherit;
-}
-
-.feed-coverage {
-  max-width: 45rem;
-  margin-top: 1.5em;
-  color: var(--muted);
 }
 
 .search-primary-controls {
@@ -1578,15 +1492,4 @@ a:focus-visible {
     height: 1.25rem;
   }
 
-  .feed-form input[type="search"],
-  .feed-form input[type="text"],
-  .feed-submit,
-  .feed-shortlink-submit {
-    min-height: 2.75rem;
-  }
-
-  .feed-field {
-    grid-template-columns: minmax(0, 1fr);
-    align-items: stretch;
-  }
 }

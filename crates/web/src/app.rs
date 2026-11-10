@@ -20,7 +20,7 @@ use crate::{
 		is_external_video, post_result, post_view, search_comment_tree, search_result, subreddit_feed_item, user_controls, user_profile, wiki_path, wiki_view, FeedTemplate,
 		GalleryTemplate, MoreCommentsTemplate, PostContentTemplate, PostTemplate, SearchResultView, SubredditTemplate, UserTemplate, VideoPlayerTemplate, WikiTemplate,
 	},
-	ImageDisplay, WebFeatures,
+	ImageDisplay,
 };
 
 const PAGE_SIZE: u8 = 25;
@@ -28,7 +28,6 @@ const PAGE_SIZE: u8 = 25;
 struct PostMedia {
 	video: MediaProxy,
 	image_display: ImageDisplay,
-	features: WebFeatures,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -91,12 +90,7 @@ pub struct WikiQuery {
 	v2: Option<String>,
 }
 
-pub async fn front_page(
-	State(service): State<RedditService>,
-	State(signer): State<MediaSigner>,
-	State(features): State<WebFeatures>,
-	Query(query): Query<FeedQuery>,
-) -> Result<FeedTemplate, AppError> {
+pub async fn front_page(State(service): State<RedditService>, State(signer): State<MediaSigner>, Query(query): Query<FeedQuery>) -> Result<FeedTemplate, AppError> {
 	let (sort, sort_name) = parse_post_sort(query.sort.as_deref(), false)?;
 	let (time, time_name) = parse_time(sort == PostSort::Top, query.t.as_deref())?;
 	let (listing_query, page) = query.listing(time);
@@ -110,7 +104,6 @@ pub async fn front_page(
 	let items = listing.data.children.iter().map(|thing| feed_item(&thing.data, &signer)).collect();
 
 	Ok(FeedTemplate {
-		features,
 		items,
 		controls: feed_controls("/", sort_name, time_name, false),
 		pagination,
@@ -122,7 +115,6 @@ pub async fn subreddit_feed(
 	State(service): State<RedditService>,
 	State(signer): State<MediaSigner>,
 	State(image_display): State<ImageDisplay>,
-	State(features): State<WebFeatures>,
 	Path(subreddit): Path<String>,
 	Query(query): Query<FeedQuery>,
 ) -> Result<SubredditTemplate, AppError> {
@@ -151,7 +143,6 @@ pub async fn subreddit_feed(
 	};
 
 	Ok(SubredditTemplate {
-		features,
 		community: community_view(&community.data, &signer, image_display, has_wiki),
 		items,
 		controls: feed_controls(&format!("/r/{subreddit}"), sort_name, time_name, true),
@@ -172,30 +163,17 @@ struct UserActivityPage {
 	results: Vec<SearchResultView>,
 }
 
-pub async fn user_posts(
-	state: State<RedditService>,
-	signer: State<MediaSigner>,
-	features: State<WebFeatures>,
-	path: Path<String>,
-	query: Query<FeedQuery>,
-) -> Result<UserTemplate, AppError> {
-	user_page(state, signer, features, path, query, UserSection::Posts).await
+pub async fn user_posts(state: State<RedditService>, signer: State<MediaSigner>, path: Path<String>, query: Query<FeedQuery>) -> Result<UserTemplate, AppError> {
+	user_page(state, signer, path, query, UserSection::Posts).await
 }
 
-pub async fn user_comments(
-	state: State<RedditService>,
-	signer: State<MediaSigner>,
-	features: State<WebFeatures>,
-	path: Path<String>,
-	query: Query<FeedQuery>,
-) -> Result<UserTemplate, AppError> {
-	user_page(state, signer, features, path, query, UserSection::Comments).await
+pub async fn user_comments(state: State<RedditService>, signer: State<MediaSigner>, path: Path<String>, query: Query<FeedQuery>) -> Result<UserTemplate, AppError> {
+	user_page(state, signer, path, query, UserSection::Comments).await
 }
 
 async fn user_page(
 	State(service): State<RedditService>,
 	State(signer): State<MediaSigner>,
-	State(features): State<WebFeatures>,
 	Path(username): Path<String>,
 	Query(query): Query<FeedQuery>,
 	section: UserSection,
@@ -218,7 +196,6 @@ async fn user_page(
 	let pagination = feed_pagination(base, sort_name, time_name, activity.before.as_deref(), activity.after.as_deref(), page);
 
 	Ok(UserTemplate {
-		features,
 		profile: user_profile(&user.data),
 		results: activity.results,
 		controls: user_controls(base, sort_name, time_name),
@@ -283,28 +260,25 @@ pub async fn wiki_root(
 	State(service): State<RedditService>,
 	State(signer): State<MediaSigner>,
 	State(image_display): State<ImageDisplay>,
-	State(features): State<WebFeatures>,
 	Path(subreddit): Path<String>,
 ) -> Result<Response, AppError> {
-	wiki_response(service, signer, image_display, features, subreddit, None, WikiQuery::default()).await
+	wiki_response(service, signer, image_display, subreddit, None, WikiQuery::default()).await
 }
 
 pub async fn wiki_page(
 	State(service): State<RedditService>,
 	State(signer): State<MediaSigner>,
 	State(image_display): State<ImageDisplay>,
-	State(features): State<WebFeatures>,
 	Path((subreddit, page)): Path<(String, String)>,
 	Query(query): Query<WikiQuery>,
 ) -> Result<Response, AppError> {
-	wiki_response(service, signer, image_display, features, subreddit, Some(page), query).await
+	wiki_response(service, signer, image_display, subreddit, Some(page), query).await
 }
 
 async fn wiki_response(
 	service: RedditService,
 	signer: MediaSigner,
 	image_display: ImageDisplay,
-	features: WebFeatures,
 	subreddit: String,
 	requested_page: Option<String>,
 	query: WikiQuery,
@@ -325,7 +299,6 @@ async fn wiki_response(
 	if page == "index" && has_wiki && !has_wiki_page(&pages, "index") {
 		return Ok(
 			WikiTemplate {
-				features,
 				community,
 				wiki: generated_wiki_index(&subreddit, &pages),
 			}
@@ -341,7 +314,6 @@ async fn wiki_response(
 
 	Ok(
 		WikiTemplate {
-			features,
 			community,
 			wiki: wiki_view(&subreddit, &page, &wiki, &pages, &signer, image_display),
 		}
@@ -354,18 +326,13 @@ pub async fn post_comments(
 	State(signer): State<MediaSigner>,
 	State(media): State<MediaProxy>,
 	State(image_display): State<ImageDisplay>,
-	State(features): State<WebFeatures>,
 	Path(path): Path<PostPath>,
 	Query(query): Query<PostQuery>,
 ) -> Result<PostTemplate, AppError> {
 	post_page(
 		service,
 		signer,
-		PostMedia {
-			video: media,
-			image_display,
-			features,
-		},
+		PostMedia { video: media, image_display },
 		path.subreddit,
 		path.article,
 		path.comment,
@@ -481,7 +448,6 @@ async fn post_page(
 	let search_query = search.as_deref().unwrap_or_default();
 
 	Ok(PostTemplate {
-		features: media.features,
 		controls: comment_sort_controls(sort_name, &post.item.permalink, search_query),
 		comments_heading: if search.is_some() {
 			format!("{result_count} matching comment{}", if result_count == 1 { "" } else { "s" })

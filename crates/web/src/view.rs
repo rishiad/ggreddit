@@ -20,7 +20,7 @@ use neddit_api::models::{Post, PublicThing, Subreddit, User, WikiPage, WikiPageL
 use serde_json::Value;
 use url::{form_urlencoded, Url};
 
-use crate::{markdown, ImageDisplay, WebFeatures};
+use crate::{markdown, ImageDisplay};
 
 #[derive(Clone, Debug)]
 pub struct FeedItem {
@@ -76,47 +76,10 @@ pub struct SortControls {
 #[derive(Template, WebTemplate)]
 #[template(path = "feed.html")]
 pub struct FeedTemplate {
-	pub(crate) features: WebFeatures,
 	pub items: Vec<FeedItem>,
 	pub controls: SortControls,
 	pub pagination: Pagination,
 	pub feed_label: String,
-}
-
-#[derive(Template, WebTemplate)]
-#[template(path = "custom_feed.html")]
-pub struct CustomFeedTemplate {
-	pub(crate) features: WebFeatures,
-	pub mode: FeedPageMode,
-	pub share_url: String,
-	pub short_url: String,
-	pub create_action: Option<&'static str>,
-	pub query: String,
-	pub rank: String,
-	pub include_nsfw: bool,
-	pub nsfw_available: bool,
-	pub pools: Vec<SelectChoice>,
-	pub times: Vec<SelectChoice>,
-	pub limits: Vec<SelectChoice>,
-	pub items: Vec<FeedItem>,
-	pub feed_label: String,
-	pub result_count: usize,
-	pub searched: bool,
-	pub diagnostic: String,
-	pub coverage: Vec<String>,
-	pub pagination: Pagination,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum FeedPageMode {
-	Builder,
-	Shared,
-}
-
-impl FeedPageMode {
-	pub const fn is_builder(self) -> bool {
-		matches!(self, Self::Builder)
-	}
 }
 
 #[derive(Clone, Debug)]
@@ -149,7 +112,6 @@ pub struct SearchMetadata {
 #[derive(Template, WebTemplate)]
 #[template(path = "search.html")]
 pub struct SearchTemplate {
-	pub(crate) features: WebFeatures,
 	pub query: String,
 	pub include_nsfw: bool,
 	pub nsfw_available: bool,
@@ -192,7 +154,6 @@ pub struct UserProfileView {
 #[derive(Template, WebTemplate)]
 #[template(path = "user.html")]
 pub struct UserTemplate {
-	pub(crate) features: WebFeatures,
 	pub profile: UserProfileView,
 	pub results: Vec<SearchResultView>,
 	pub controls: SortControls,
@@ -206,7 +167,6 @@ pub struct UserTemplate {
 #[derive(Template, WebTemplate)]
 #[template(path = "subreddit.html")]
 pub struct SubredditTemplate {
-	pub(crate) features: WebFeatures,
 	pub community: CommunityView,
 	pub items: Vec<FeedItem>,
 	pub controls: SortControls,
@@ -234,7 +194,6 @@ pub struct WikiView {
 #[derive(Template, WebTemplate)]
 #[template(path = "wiki.html")]
 pub struct WikiTemplate {
-	pub(crate) features: WebFeatures,
 	pub community: CommunityView,
 	pub wiki: WikiView,
 }
@@ -296,7 +255,6 @@ pub enum CommentTreeEvent {
 #[derive(Template, WebTemplate)]
 #[template(path = "post.html")]
 pub struct PostTemplate {
-	pub(crate) features: WebFeatures,
 	pub post: PostView,
 	pub comment_tree: Vec<CommentTreeEvent>,
 	pub controls: SortControls,
@@ -429,15 +387,6 @@ pub fn is_external_video(post: &Post) -> bool {
 	["secure_media", "media"]
 		.into_iter()
 		.any(|key| post.extra.get(key).and_then(|media| media.pointer("/oembed/type")).and_then(Value::as_str) == Some("video"))
-}
-
-pub fn custom_feed_item(post: &Post, signer: &MediaSigner, include_nsfw: bool) -> FeedItem {
-	let mut item = feed_item(post, signer);
-	item.flair = post_flair(post);
-	if include_nsfw {
-		item.badges.retain(|badge| *badge != "NSFW");
-	}
-	item
 }
 
 fn post_media_url(post: &Post, signer: &MediaSigner) -> Option<String> {

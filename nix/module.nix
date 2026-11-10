@@ -11,7 +11,6 @@ let
   format = pkgs.formats.toml { };
   settings = lib.recursiveUpdate (lib.recursiveUpdate {
     cache.path = "/var/cache/neddit/cache.sqlite";
-    shortlinks.path = "/var/lib/neddit/feeds.sqlite";
   } cfg.settings) (lib.optionalAttrs (cfg.mediaKeyFile != null) {
     media.signing_key_file = "/run/credentials/neddit.service/media-key";
   });
