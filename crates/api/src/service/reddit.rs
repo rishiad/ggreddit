@@ -240,7 +240,7 @@ pub(super) fn validate_wiki_listing_query(query: &ListingQuery) -> Result<(), Se
 	validate_listing_query_with(query, validate_wiki_cursor)
 }
 
-fn validate_listing_query_with(query: &ListingQuery, cursor_validator: fn(&'static str, &str) -> Result<(), ServiceError>) -> Result<(), ServiceError> {
+pub(super) fn validate_listing_query_with(query: &ListingQuery, cursor_validator: fn(&'static str, &str) -> Result<(), ServiceError>) -> Result<(), ServiceError> {
 	if query.after.is_some() && query.before.is_some() {
 		return Err(ServiceError::ConflictingCursors);
 	}

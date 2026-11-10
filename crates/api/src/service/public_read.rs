@@ -5,7 +5,7 @@ use crate::parsing::{
 	parse_user_overview_listing,
 };
 use crate::service::query_codec;
-use crate::service::reddit::{invalid_parameter, validate_listing_query, validate_subreddit, validate_username, with_query};
+use crate::service::reddit::{invalid_parameter, validate_listing_query, validate_listing_query_with, validate_subreddit, validate_username, with_query};
 use crate::service::sanitize::{clear_listing_modhash, clear_public_listing_modhash};
 use crate::service::{RedditService, ServiceError};
 use url::Url;
@@ -126,7 +126,16 @@ impl RedditService {
 }
 
 fn validate_search_query(query: &SearchQuery) -> Result<(), ServiceError> {
-	validate_listing_query(&query.listing)?;
+	validate_listing_query_with(&query.listing, |parameter, cursor| {
+		if !cursor.is_empty() && cursor.len() <= 256 && cursor.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'=' | b'_')) {
+			Ok(())
+		} else {
+			Err(ServiceError::InvalidCursor {
+				parameter,
+				cursor: cursor.to_owned(),
+			})
+		}
+	})?;
 	if query.query.is_empty() || query.query.chars().count() > 512 {
 		return Err(invalid_parameter("q", &query.query));
 	}

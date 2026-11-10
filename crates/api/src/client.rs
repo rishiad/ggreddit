@@ -1,4 +1,5 @@
 pub mod error;
+mod graphql;
 mod oauth;
 
 use axum::{body::Body, http::HeaderMap, response::Response};
@@ -281,7 +282,16 @@ impl RedditClient {
 	}
 
 	async fn fetch_post_comments_graphql(&self, variables: Value) -> Result<Value, ClientError> {
+		let json = self.graphql("PostComments", POST_COMMENTS_HASH, variables).await?;
+		if json.pointer("/data/postInfoById/commentForest/trees").and_then(Value::as_array).is_none() {
+			return Err(ClientError::InvalidEnvelope);
+		}
+		Ok(json)
+	}
+
+	async fn graphql(&self, operation: &'static str, hash: &'static str, variables: Value) -> Result<Value, ClientError> {
 		let lease = self.oauth.acquire().await?;
+		let generation = lease.generation();
 		let mut request = self.http.post(REDDIT_GRAPHQL_URL);
 		for (key, value) in lease.headers() {
 			if !key.eq_ignore_ascii_case("content-type") {
@@ -289,18 +299,27 @@ impl RedditClient {
 			}
 		}
 		let payload = serde_json::json!({
-			"operationName": "PostComments",
+			"operationName": operation,
 			"variables": variables,
-			"extensions": { "persistedQuery": { "version": 1, "sha256Hash": POST_COMMENTS_HASH } },
+			"extensions": { "persistedQuery": { "version": 1, "sha256Hash": hash } },
 		});
 		let response = request.json(&payload).send().await.map_err(|source| ClientError::Request {
 			url: REDDIT_GRAPHQL_URL.into(),
 			source,
 		})?;
 		let status = response.status();
+		let reset = self.observe_rate_limit_headers(generation, &response).await;
+		if status.as_u16() == 429 {
+			self.oauth.invalidate(generation).await;
+			return Err(ClientError::RateLimited { reset });
+		}
+		if status.as_u16() == 401 {
+			self.oauth.invalidate(generation).await;
+			return Err(ClientError::Unauthorized);
+		}
 		if !status.is_success() {
 			return Err(ClientError::UnexpectedStatus {
-				path: "PostComments".into(),
+				path: operation.into(),
 				status: status.as_u16(),
 			});
 		}
@@ -309,26 +328,27 @@ impl RedditClient {
 			return Err(ClientError::BodyTooLarge);
 		}
 		let mut body = Vec::new();
-		while let Some(chunk) = response.chunk().await.map_err(|source| ClientError::Body {
-			path: "PostComments".into(),
-			source,
-		})? {
+		while let Some(chunk) = response.chunk().await.map_err(|source| ClientError::Body { path: operation.into(), source })? {
 			append_body_chunk(&mut body, &chunk)?;
 		}
-		let json: Value = serde_json::from_slice(&body).map_err(|source| ClientError::Decode {
-			path: "PostComments".into(),
-			source,
-		})?;
+		let json: Value = serde_json::from_slice(&body).map_err(|source| ClientError::Decode { path: operation.into(), source })?;
 		if json["errors"].as_array().is_some_and(|errors| !errors.is_empty()) {
+			warn!(event = "upstream.graphql_errors", operation, codes = ?json["errors"].as_array().map(|errors| errors.iter().map(|error| error["extensions"]["code"].as_str().unwrap_or("unknown")).collect::<Vec<_>>()), "Reddit GraphQL rejected a request");
 			return Err(ClientError::InvalidEnvelope);
 		}
-		if json.pointer("/data/postInfoById/commentForest/trees").and_then(Value::as_array).is_none() {
+		if json["data"].is_null() {
 			return Err(ClientError::InvalidEnvelope);
 		}
 		Ok(json)
 	}
 
 	async fn fetch_json(&self, path: String) -> Result<Value, ClientError> {
+		if let Some(result) = graphql::route(self, &path).await {
+			if let Err(error) = &result {
+				warn!(event = "upstream.graphql_failed", %path, %error, "Reddit GraphQL request failed");
+			}
+			return result;
+		}
 		let UpstreamResponse {
 			mut response,
 			lease,
