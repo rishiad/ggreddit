@@ -10,7 +10,11 @@ use axum::{
 	routing::get,
 	Router,
 };
-use std::{io, str, time::Instant};
+use std::{
+	future::{Future, IntoFuture},
+	io, str,
+	time::{Duration, Instant},
+};
 use thiserror::Error;
 use tower_http::compression::{
 	predicate::{Predicate, SizeAbove},
@@ -22,6 +26,7 @@ use url::Url;
 const COMPRESSION_MIN_SIZE: u64 = 1452;
 const MANIFEST_SIZE_LIMIT: usize = 8 * 1024 * 1024;
 const MAX_MEDIA_REDIRECTS: usize = 4;
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 const MEDIA_CACHE_CONTROL: &str = "public, max-age=604800, immutable";
 const VIDEO_CACHE_CONTROL: &str = "public, max-age=900";
 const HTTP_TARGET: &str = "neddit::http";
@@ -88,7 +93,26 @@ pub async fn bind(address: &str) -> io::Result<tokio::net::TcpListener> {
 }
 
 pub async fn serve(app: Router, listener: tokio::net::TcpListener) -> io::Result<()> {
-	axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await
+	serve_until(app, listener, shutdown_signal(), SHUTDOWN_GRACE).await
+}
+
+async fn serve_until(app: Router, listener: tokio::net::TcpListener, signal: impl Future<Output = ()> + Send + 'static, grace: Duration) -> io::Result<()> {
+	let (started, received) = tokio::sync::oneshot::channel();
+	let server = axum::serve(listener, app)
+		.with_graceful_shutdown(async move {
+			signal.await;
+			let _ = started.send(());
+		})
+		.into_future();
+	tokio::pin!(server);
+	tokio::select! {
+		biased;
+		result = &mut server => result,
+		_ = async { let _ = received.await; tokio::time::sleep(grace).await } => {
+			tracing::warn!(event = "service.shutdown_timeout", "stalled HTTP requests exceeded the shutdown grace period");
+			Ok(())
+		}
+	}
 }
 
 async fn log_request(mut request: Request, next: Next) -> Response {
@@ -341,5 +365,45 @@ async fn shutdown_signal() {
 				}
 			}
 		}
+	}
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+	use super::*;
+	use tokio::{io::AsyncWriteExt, sync::Notify};
+
+	#[tokio::test]
+	async fn active_request_cannot_block_shutdown_forever() {
+		let started = std::sync::Arc::new(Notify::new());
+		let app = Router::new().route(
+			"/hold",
+			get({
+				let started = started.clone();
+				move || {
+					let started = started.clone();
+					async move {
+						started.notify_one();
+						std::future::pending::<&'static str>().await
+					}
+				}
+			}),
+		);
+		let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+		let address = listener.local_addr().unwrap();
+		let (signal, shutdown) = tokio::sync::oneshot::channel::<()>();
+		let server = tokio::spawn(serve_until(
+			app,
+			listener,
+			async move {
+				let _ = shutdown.await;
+			},
+			Duration::from_millis(50),
+		));
+		let mut connection = tokio::net::TcpStream::connect(address).await.unwrap();
+		connection.write_all(b"GET /hold HTTP/1.1\r\nHost: localhost\r\n\r\n").await.unwrap();
+		tokio::time::timeout(Duration::from_secs(2), started.notified()).await.unwrap();
+		signal.send(()).unwrap();
+		assert!(tokio::time::timeout(Duration::from_secs(2), server).await.unwrap().unwrap().is_ok());
 	}
 }
