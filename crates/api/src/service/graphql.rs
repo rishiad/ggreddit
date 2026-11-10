@@ -92,13 +92,17 @@ impl RedditService {
 			return Err(ServiceError::InvalidGraphqlComments);
 		}
 		let trees = post["commentForest"]["trees"].as_array().ok_or(ServiceError::InvalidGraphqlComments)?;
-		let items = trees.iter().map(|tree| item(tree, article)).collect::<Result<Vec<_>, _>>()?;
+		let items = items(trees, article)?;
 		let result = json!({ "kind": "Listing", "data": { "children": nest(items) } });
 		Ok(parse_listing(&result)?)
 	}
 }
 
-fn item(tree: &Value, article: &str) -> Result<(u64, Value), ServiceError> {
+fn items(trees: &[Value], article: &str) -> Result<Vec<(u64, Value)>, ServiceError> {
+	trees.iter().enumerate().map(|(index, tree)| item(tree, trees.get(index + 1), article, index)).collect()
+}
+
+fn item(tree: &Value, next: Option<&Value>, article: &str, index: usize) -> Result<(u64, Value), ServiceError> {
 	let depth = tree["depth"].as_u64().ok_or(ServiceError::InvalidGraphqlComments)?;
 	let post_name = format!("t3_{article}");
 	let parent = tree["parentId"].as_str().unwrap_or(&post_name);
@@ -117,7 +121,15 @@ fn item(tree: &Value, article: &str) -> Result<(u64, Value), ServiceError> {
 		));
 	}
 	let node = &tree["node"];
-	let name = node["id"].as_str().ok_or(ServiceError::InvalidGraphqlComments)?;
+	let name = match node["id"].as_str() {
+		Some(name) => name.to_owned(),
+		None if node["__typename"] == "DeletedComment" => next
+			.filter(|child| child["depth"].as_u64() == depth.checked_add(1))
+			.and_then(|child| child["parentId"].as_str())
+			.filter(|parent| parent.starts_with("t1_"))
+			.map_or_else(|| format!("t1_deleted_{article}_{index}"), str::to_owned),
+		None => return Err(ServiceError::InvalidGraphqlComments),
+	};
 	let id = name.strip_prefix("t1_").ok_or(ServiceError::InvalidGraphqlComments)?;
 	let author = node["authorInfo"]["name"].as_str().unwrap_or("[deleted]");
 	let body = if node["__typename"] == "DeletedComment" {
@@ -188,7 +200,7 @@ mod tests {
 		let a = json!({"depth":0,"parentId":null,"more":null,"node":{"id":"t1_a","authorInfo":{"name":"alice"},"content":{"markdown":"hello"},"score":2,"createdAt":"2026-10-24T01:02:03Z","editedAt":null}});
 		let b = json!({"depth":1,"parentId":"t1_a","more":null,"node":{"id":"t1_b","content":{"markdown":"reply"}}});
 		let c = json!({"depth":0,"parentId":null,"more":{"count":25,"cursor":"next-page"},"node":null});
-		let items = [a, b, c].iter().map(|tree| item(tree, "post").unwrap()).collect();
+		let items = items(&[a, b, c], "post").unwrap();
 		let list = json!({"kind":"Listing","data":{"children":nest(items)}});
 		let listing: Listing<CommentChild> = parse_listing(&list).unwrap();
 		let CommentChild::Comment(first) = &listing.data.children[0] else {
@@ -202,5 +214,28 @@ mod tests {
 			panic!("expected cursor")
 		};
 		assert_eq!(more.data.extra["gql_cursor"], "next-page");
+	}
+
+	#[test]
+	fn keeps_replies_of_deleted_comments_without_ids() {
+		let deleted = json!({"depth":1,"parentId":"t1_parent","more":null,"node":{"__typename":"DeletedComment","createdAt":"2026-11-10T06:09:59Z"}});
+		let reply = json!({"depth":2,"parentId":"t1_missing","more":null,"node":{"__typename":"Comment","id":"t1_reply","content":{"markdown":"still here"}}});
+		let leaf = json!({"depth":0,"parentId":null,"more":null,"node":{"__typename":"DeletedComment"}});
+		let children = nest(items(&[deleted, reply, leaf], "post").unwrap());
+		let list: Listing<CommentChild> = parse_listing(&json!({"kind":"Listing","data":{"children":children}})).unwrap();
+		let CommentChild::Comment(deleted) = &list.data.children[0] else {
+			panic!("expected deleted comment")
+		};
+		assert_eq!(deleted.data.id, "missing");
+		assert_eq!(deleted.data.body, "[deleted]");
+		let crate::models::CommentReplies::Listing(replies) = &deleted.data.replies else {
+			panic!("expected replies")
+		};
+		assert_eq!(replies.data.children.len(), 1);
+		let CommentChild::Comment(leaf) = &list.data.children[1] else {
+			panic!("expected deleted leaf")
+		};
+		assert_eq!(leaf.data.id, "deleted_post_2");
+		assert!(items(&[json!({"depth":0,"more":null,"node":{"__typename":"Comment"}})], "post").is_err());
 	}
 }
