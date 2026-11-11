@@ -28,10 +28,6 @@ impl RedditService {
 		}
 	}
 
-	pub const fn allows_nsfw(&self) -> bool {
-		self.content.allows_nsfw()
-	}
-
 	pub async fn front_page_posts(&self, sort: PostSort, query: &ListingQuery) -> Result<Listing<Thing<Post>>, ServiceError> {
 		self.post_listing(None, sort, query).await
 	}

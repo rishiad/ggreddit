@@ -13,7 +13,7 @@ serde.workspace = true
 percent-encoding = "2.3.1"
 serde_json.workspace = true
 serde_urlencoded = "0.7.1"
-tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "signal", "sync", "time"] }
+tokio = { workspace = true, features = ["macros", "net", "rt", "signal", "sync", "time"] }
 thiserror.workspace = true
 tower-http.workspace = true
 url.workspace = true

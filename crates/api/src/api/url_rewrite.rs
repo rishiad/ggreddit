@@ -3,17 +3,12 @@ use axum::{
 	body::{to_bytes, Body},
 	extract::{Request, State},
 	http::{header, HeaderValue, StatusCode},
-	middleware::{self, Next},
+	middleware::Next,
 	response::Response,
-	Router,
 };
 use tracing::error;
 
-pub(super) fn with_reddit_urls(router: Router, signer: MediaSigner) -> Router {
-	router.layer(middleware::from_fn_with_state(signer, rewrite_reddit_urls))
-}
-
-async fn rewrite_reddit_urls(State(signer): State<MediaSigner>, request: Request, next: Next) -> Response {
+pub(super) async fn rewrite_reddit_urls(State(signer): State<MediaSigner>, request: Request, next: Next) -> Response {
 	let response = next.run(request).await;
 	if !is_json(&response) {
 		return response;

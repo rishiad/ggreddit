@@ -259,7 +259,8 @@ pub fn feed_item(post: &Post, signer: &MediaSigner) -> FeedItem {
 	let href = if post.is_self || is_reddit_video(post) {
 		permalink.clone()
 	} else {
-		post_media_url(post, signer)
+		signer
+			.signed_media_url(&post.url)
 			.filter(|_| !post.spoiler)
 			.or_else(|| safe_outbound(&post.url, signer))
 			.unwrap_or_else(|| permalink.clone())
@@ -367,10 +368,6 @@ fn is_reddit_video(post: &Post) -> bool {
 	reddit_video_source(post).is_some()
 		|| post.extra.get("is_video").and_then(Value::as_bool) == Some(true)
 		|| post.extra.get("post_hint").and_then(Value::as_str) == Some("hosted:video")
-}
-
-fn post_media_url(post: &Post, signer: &MediaSigner) -> Option<String> {
-	signer.signed_media_url(&post.url)
 }
 
 fn preview_url(post: &Post) -> Option<&str> {
@@ -590,7 +587,7 @@ pub fn post_view(post: &Post, signer: &MediaSigner, image_display: ImageDisplay)
 	item.flair = post_flair(post);
 	let gallery = gallery_view(post, signer, image_display, 0);
 	let image_url = if gallery.is_none() && item.video.is_none() && is_image_post(post) {
-		post_media_url(post, signer)
+		signer.signed_media_url(&post.url)
 	} else {
 		None
 	};
