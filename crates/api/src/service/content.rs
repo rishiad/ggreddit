@@ -37,16 +37,6 @@ impl ContentPolicy {
 		}
 	}
 
-	pub(super) fn filter_users(self, listing: &mut Listing<Thing<User>>) {
-		if !self.allow_nsfw {
-			listing
-				.data
-				.children
-				.retain(|user| user.data.subreddit.as_ref().and_then(|profile| profile.get("over_18")).and_then(serde_json::Value::as_bool) != Some(true));
-			update_dist(listing);
-		}
-	}
-
 	pub(super) fn require_subreddit(self, subreddit: &Thing<Subreddit>) -> Result<(), ServiceError> {
 		if self.allow_nsfw || subreddit.data.over18 != Some(true) {
 			Ok(())

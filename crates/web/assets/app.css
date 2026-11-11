@@ -553,32 +553,9 @@ a:focus-visible {
 }
 
 .comment-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
+  display: flex;
   align-items: center;
   justify-self: end;
-  justify-content: flex-end;
-  width: min(100%, 24rem);
-  min-width: 0;
-  gap: 0.5em;
-}
-
-.comment-search {
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-}
-
-.comment-search input {
-  width: 100%;
-  min-height: 2rem;
-  border: 1px solid rgb(51 51 51 / 35%);
-  border-radius: 2px;
-  padding: 0.2em 0.5em;
-  background: var(--background);
-  color: var(--text);
-  font: inherit;
-  font-weight: normal;
 }
 
 .comment-tree {
@@ -1079,161 +1056,6 @@ a:focus-visible {
   border: 0;
 }
 
-.search-form {
-  max-width: 45rem;
-}
-
-.search-query {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
-  gap: 0.5em;
-}
-
-.search-query input,
-.search-query button,
-.search-form select {
-  min-height: 2rem;
-  border: 1px solid rgb(51 51 51 / 35%);
-  border-radius: 2px;
-  background: var(--background);
-  color: var(--text);
-  font: inherit;
-}
-
-.search-query input,
-.search-form select {
-  padding: 0.25em 0.4em;
-}
-
-.search-query button {
-  padding: 0.25em 0.8em;
-  cursor: pointer;
-  font-weight: bold;
-}
-
-.search-primary-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.5em;
-  margin: 1em 0;
-}
-
-.search-primary-controls fieldset {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.search-primary-controls legend {
-  float: left;
-  width: 6rem;
-  margin: 0;
-  padding: 0;
-  font-weight: bold;
-}
-
-.search-primary-controls .search-choices,
-.search-primary-controls .search-order-values {
-  margin-inline-start: 6rem;
-}
-
-.search-order-values {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5em;
-}
-
-.search-diagnostic {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.search-diagnostic mark:empty::after {
-  content: "▏";
-}
-
-.search-choices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.2em 0.8em;
-}
-
-.search-choices label {
-  white-space: nowrap;
-}
-
-.search-results,
-.search-help {
-  margin-top: 1.5em;
-}
-
-.search-results h1 {
-  margin: 0 0 0.75em;
-  font-size: 1rem;
-}
-
-.search-help > summary {
-  cursor: pointer;
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.search-help[open] > summary {
-  margin-bottom: 0.75em;
-}
-
-.search-term {
-  padding: 2px 4px;
-  border-radius: 3px;
-  background: rgb(51 51 51 / 7%);
-  font-family: monospace;
-  font-weight: normal;
-}
-
-.search-summary {
-  max-width: 45rem;
-  margin: 0.15em 0;
-  color: rgb(51 51 51 / 75%);
-  font-size: 0.9rem;
-  line-height: 1.4;
-}
-
-.syntax-table-wrap {
-  max-width: 100%;
-  margin: 1em 0 1.5em;
-  overflow-x: auto;
-}
-
-.syntax-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-
-.syntax-table caption {
-  margin-bottom: 0.4em;
-  font-weight: 600;
-  text-align: left;
-}
-
-.syntax-table th,
-.syntax-table td {
-  padding: 0.45em 0.6em;
-  border: 1px solid rgb(51 51 51 / 18%);
-  text-align: left;
-  vertical-align: top;
-}
-
-.syntax-table th {
-  background: rgb(51 51 51 / 5%);
-}
-
-.syntax-table td:first-child {
-  white-space: nowrap;
-}
-
 @media only screen and (max-width: 760px) {
   .community-layout,
   .wiki-layout {
@@ -1333,10 +1155,7 @@ a:focus-visible {
 
   .sort-controls select,
   .sort-controls button,
-  .comment-search input,
-  .search-query input,
-  .search-query button,
-  .search-form select {
+  .sort-controls button {
     min-height: 2.75rem;
   }
 
@@ -1391,7 +1210,6 @@ a:focus-visible {
   }
 
   .comment-controls {
-    grid-template-columns: minmax(0, 1fr) 7.5rem;
     justify-self: stretch;
     width: 100%;
     max-width: none;
@@ -1467,29 +1285,6 @@ a:focus-visible {
     margin-left: 2rem;
   }
 
-  .search-primary-controls legend {
-    float: none;
-    width: auto;
-    margin-bottom: 0.25rem;
-  }
 
-  .search-primary-controls .search-choices,
-  .search-primary-controls .search-order-values {
-    margin-inline-start: 0;
-  }
-
-  .search-choices label,
-  .search-order-values label,
-  .search-primary-controls > label {
-    display: inline-flex;
-    align-items: center;
-    min-height: 2.75rem;
-  }
-
-  .search-form input[type="radio"],
-  .search-form input[type="checkbox"] {
-    width: 1.25rem;
-    height: 1.25rem;
-  }
 
 }

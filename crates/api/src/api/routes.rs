@@ -1,8 +1,7 @@
 use crate::api::query::{ApiQuery, DefaultQuery};
 use crate::api::response::respond;
 use crate::service::{
-	CommentQuery, DuplicateQuery, InfoQuery, ListingQuery, MoreChildrenQuery, PostSort, RedditService, SearchQuery, SubredditSearchQuery, SubredditSort, UserDirectorySort,
-	UserHistoryQuery, UserSearchQuery, WikiPageQuery,
+	CommentQuery, DuplicateQuery, InfoQuery, ListingQuery, MoreChildrenQuery, PostSort, RedditService, SubredditSort, UserDirectorySort, UserHistoryQuery, WikiPageQuery,
 };
 use axum::{
 	extract::{Path, State},
@@ -67,9 +66,6 @@ pub(super) fn router() -> Router<RedditService> {
 		.route("/subreddits/popular", subreddits(SubredditSort::Popular))
 		.route("/subreddits/new", subreddits(SubredditSort::New))
 		.route("/subreddits/default", subreddits(SubredditSort::Default))
-		.route("/subreddits/search", get(search_subreddits))
-		.route("/search", get(search))
-		.route("/r/{subreddit}/search", get(search_subreddit))
 		.route("/info", get(info))
 		.route("/r/{subreddit}/api/info", get(subreddit_info))
 		.route("/user/{username}", get(user_overview))
@@ -79,7 +75,6 @@ pub(super) fn router() -> Router<RedditService> {
 		.route("/v1/user/{username}/trophies", get(user_trophies))
 		.route("/users/new", users(UserDirectorySort::New))
 		.route("/users/popular", users(UserDirectorySort::Popular))
-		.route("/users/search", get(search_users))
 }
 
 async fn more_children(State(service): State<RedditService>, ApiQuery(query): ApiQuery<MoreChildrenQuery>) -> Response {
@@ -181,18 +176,6 @@ async fn post_duplicates(State(service): State<RedditService>, Path(article): Pa
 	respond(service.post_duplicates(&article, &query).await)
 }
 
-async fn search_subreddits(State(service): State<RedditService>, ApiQuery(query): ApiQuery<SubredditSearchQuery>) -> Response {
-	respond(service.search_subreddits(&query).await)
-}
-
-async fn search(State(service): State<RedditService>, ApiQuery(query): ApiQuery<SearchQuery>) -> Response {
-	respond(service.search(&query).await)
-}
-
-async fn search_subreddit(State(service): State<RedditService>, Path(subreddit): Path<String>, ApiQuery(query): ApiQuery<SearchQuery>) -> Response {
-	respond(service.search_subreddit(&subreddit, &query).await)
-}
-
 async fn info(State(service): State<RedditService>, DefaultQuery(query): DefaultQuery<InfoQuery>) -> Response {
 	respond(service.info(&query).await)
 }
@@ -215,8 +198,4 @@ async fn user_comments(State(service): State<RedditService>, Path(username): Pat
 
 async fn user_trophies(State(service): State<RedditService>, Path(username): Path<String>) -> Response {
 	respond(service.user_trophies(&username).await)
-}
-
-async fn search_users(State(service): State<RedditService>, ApiQuery(query): ApiQuery<UserSearchQuery>) -> Response {
-	respond(service.search_users(&query).await)
 }

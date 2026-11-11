@@ -41,8 +41,6 @@ pub enum AppError {
 	InvalidFeedTime,
 	#[error("invalid comment sort")]
 	InvalidCommentSort,
-	#[error("comment search must contain at most 512 characters")]
-	InvalidCommentSearch,
 	#[error("post not found")]
 	PostNotFound,
 	#[error("post is not marked as external video")]
@@ -59,7 +57,7 @@ impl IntoResponse for AppError {
 			return response_with_description(StatusCode::FORBIDDEN, "This server has NSFW disabled.");
 		}
 		let status = match self {
-			Self::InvalidSort | Self::InvalidFeedTime | Self::InvalidCommentSort | Self::InvalidCommentSearch | Self::NotExternalVideo => StatusCode::BAD_REQUEST,
+			Self::InvalidSort | Self::InvalidFeedTime | Self::InvalidCommentSort | Self::NotExternalVideo => StatusCode::BAD_REQUEST,
 			Self::PostNotFound => StatusCode::NOT_FOUND,
 			Self::Service(_) => StatusCode::BAD_GATEWAY,
 			Self::Video(error) => return error.into_response(),

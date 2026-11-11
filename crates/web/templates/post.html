@@ -17,7 +17,7 @@
       <div class="post-title">
         <h1>
           <a href="{{ post.item.href }}">{{ post.item.title }}</a>
-          {% match post.item.flair %}{% when Some with (flair) %}<a class="post-flair" href="{{ flair.href }}">{{ flair.text }}</a>{% when None %}{% endmatch %}
+          {% match post.item.flair %}{% when Some with (flair) %}<span class="post-flair">{{ flair.text }}</span>{% when None %}{% endmatch %}
           {% for badge in post.item.badges %}<span class="badge">{{ badge }}</span>{% endfor %}
         </h1>
       </div>
@@ -45,12 +45,6 @@
     <header class="comments-header">
       <h2 id="comments-heading">{{ comments_heading }}</h2>
       <div class="comment-controls">
-        <form class="comment-search" action="{{ controls.action }}" method="get" role="search">
-          <input type="hidden" name="sort" value="{{ controls.active_sort }}">
-          <label class="visually-hidden" for="comment-search">Search comments in this post</label>
-          <input id="comment-search" type="search" name="q" value="{{ controls.query }}" placeholder="Search comments" maxlength="512">
-          <button class="visually-hidden" type="submit">Search comments</button>
-        </form>
         {% include "partials/sort_controls.html" %}
       </div>
     </header>

@@ -2,10 +2,9 @@ mod comments;
 mod controls;
 mod format;
 
+pub use comments::comment_tree;
 use comments::{comment_parent_url, comment_url};
-pub use comments::{comment_tree, search_comment_tree};
-pub(crate) use controls::listing_time_choices;
-pub use controls::{comment_sort_controls, feed_controls, search_choices, user_controls};
+pub use controls::{comment_sort_controls, feed_controls, user_controls};
 use format::{age, compact, signed_compact};
 
 use std::borrow::Cow;
@@ -45,7 +44,6 @@ pub struct FeedItem {
 #[derive(Clone, Debug)]
 pub struct PostFlair {
 	pub text: String,
-	pub href: String,
 }
 
 #[derive(Clone, Debug)]
@@ -67,8 +65,6 @@ pub struct SortControls {
 	pub action: String,
 	pub label: &'static str,
 	pub choice_label: &'static str,
-	pub active_sort: &'static str,
-	pub query: String,
 	pub sorts: Vec<SelectChoice>,
 	pub times: Vec<SelectChoice>,
 }
@@ -92,41 +88,20 @@ pub struct Pagination {
 }
 
 #[derive(Clone, Debug)]
-pub struct SearchResultView {
+pub struct ActivityItem {
 	pub fullname: String,
 	pub metric: String,
 	pub metric_label: String,
 	pub title: String,
 	pub href: String,
 	pub domain: Option<String>,
-	pub summary: Option<String>,
-	pub metadata: Vec<SearchMetadata>,
+	pub metadata: Vec<ActivityMetadata>,
 }
 
 #[derive(Clone, Debug)]
-pub struct SearchMetadata {
+pub struct ActivityMetadata {
 	pub text: String,
 	pub href: Option<String>,
-}
-
-#[derive(Template, WebTemplate)]
-#[template(path = "search.html")]
-pub struct SearchTemplate {
-	pub query: String,
-	pub include_nsfw: bool,
-	pub nsfw_available: bool,
-	pub kinds: Vec<SelectChoice>,
-	pub sorts: Vec<SelectChoice>,
-	pub times: Vec<SelectChoice>,
-	pub limits: Vec<SelectChoice>,
-	pub results: Vec<SearchResultView>,
-	pub result_count: usize,
-	pub searched: bool,
-	pub diagnostic: String,
-	pub error_prefix: String,
-	pub error_text: String,
-	pub error_suffix: String,
-	pub pagination: Pagination,
 }
 
 #[derive(Clone, Debug)]
@@ -155,7 +130,7 @@ pub struct UserProfileView {
 #[template(path = "user.html")]
 pub struct UserTemplate {
 	pub profile: UserProfileView,
-	pub results: Vec<SearchResultView>,
+	pub results: Vec<ActivityItem>,
 	pub controls: SortControls,
 	pub posts_url: String,
 	pub comments_url: String,
@@ -409,26 +384,9 @@ fn preview_url(post: &Post) -> Option<&str> {
 	best.or_else(|| post.extra.get("thumbnail")?.as_str().filter(|url| url.starts_with("https://") || url.starts_with("//")))
 }
 
-pub fn search_result(item: &PublicThing, signer: &MediaSigner) -> Option<SearchResultView> {
+pub fn activity_result(item: &PublicThing, signer: &MediaSigner) -> Option<ActivityItem> {
 	match item {
 		PublicThing::Post(thing) => Some(post_result(&thing.data, signer)),
-		PublicThing::Subreddit(thing) => {
-			let subreddit = &thing.data;
-			Some(SearchResultView {
-				fullname: subreddit.name.clone(),
-				metric: subreddit.subscribers.map_or_else(|| "—".into(), compact),
-				metric_label: "members".into(),
-				title: subreddit.display_name_prefixed.clone(),
-				href: format!("/r/{}", subreddit.display_name),
-				domain: None,
-				summary: nonempty(subreddit.public_description.trim()),
-				metadata: subreddit
-					.accounts_active
-					.map(|active| linked_metadata(format!("{} active", compact(active)), format!("/r/{}", subreddit.display_name)))
-					.into_iter()
-					.collect(),
-			})
-		}
 		PublicThing::Comment(thing) => {
 			let c = &thing.data;
 			let mut metadata = vec![
@@ -439,31 +397,29 @@ pub fn search_result(item: &PublicThing, signer: &MediaSigner) -> Option<SearchR
 				metadata.push(linked_metadata(format!("in r/{subreddit}"), format!("/r/{subreddit}")));
 			}
 			metadata.push(linked_metadata("parent".into(), comment_parent_url(c)));
-			Some(SearchResultView {
+			Some(ActivityItem {
 				fullname: c.name.clone(),
 				metric: c.score.to_string(),
 				metric_label: "points".into(),
 				title: c.body.chars().take(160).collect(),
 				href: comment_url(c),
 				domain: None,
-				summary: None,
 				metadata,
 			})
 		}
-		PublicThing::User(_) => None,
+		PublicThing::User(_) | PublicThing::Subreddit(_) => None,
 	}
 }
 
-pub fn post_result(post: &Post, signer: &MediaSigner) -> SearchResultView {
+pub fn post_result(post: &Post, signer: &MediaSigner) -> ActivityItem {
 	let item = feed_item(post, signer);
-	SearchResultView {
+	ActivityItem {
 		fullname: post.name.clone(),
 		metric: item.score,
 		metric_label: "points".into(),
 		title: item.title,
 		href: item.href,
 		domain: item.show_domain.then_some(item.domain),
-		summary: None,
 		metadata: vec![
 			optional_link_metadata(format!("by {}", item.author), item.author_url),
 			plain_metadata(item.age),
@@ -473,15 +429,15 @@ pub fn post_result(post: &Post, signer: &MediaSigner) -> SearchResultView {
 	}
 }
 
-fn linked_metadata(text: String, href: String) -> SearchMetadata {
-	SearchMetadata { text, href: Some(href) }
+fn linked_metadata(text: String, href: String) -> ActivityMetadata {
+	ActivityMetadata { text, href: Some(href) }
 }
 
-fn plain_metadata(text: String) -> SearchMetadata {
-	SearchMetadata { text, href: None }
+fn plain_metadata(text: String) -> ActivityMetadata {
+	ActivityMetadata { text, href: None }
 }
 
-fn optional_link_metadata(text: String, href: String) -> SearchMetadata {
+fn optional_link_metadata(text: String, href: String) -> ActivityMetadata {
 	if href.is_empty() {
 		plain_metadata(text)
 	} else {
@@ -651,17 +607,7 @@ fn post_flair(post: &Post) -> Option<PostFlair> {
 	if text.is_empty() {
 		return None;
 	}
-	let escaped = text.replace('\\', "\\\\").replace('"', "\\\"");
-	let query = format!("subreddit:{} flair:\"{escaped}\"", post.subreddit);
-	let mut params = form_urlencoded::Serializer::new(String::new());
-	params.append_pair("q", &query).append_pair("kind", "posts");
-	if post.over_18 {
-		params.append_pair("include_nsfw", "true");
-	}
-	Some(PostFlair {
-		text: text.to_owned(),
-		href: format!("/search?{}", params.finish()),
-	})
+	Some(PostFlair { text: text.to_owned() })
 }
 
 pub fn gallery_view(post: &Post, signer: &MediaSigner, image_display: ImageDisplay, index: usize) -> Option<GalleryView> {
@@ -786,10 +732,7 @@ fn local_web_navigation(value: &str, signer: &MediaSigner) -> Option<String> {
 	let url = base.join(&local).ok()?;
 	let segments: Vec<_> = url.path_segments()?.filter(|segment| !segment.is_empty()).collect();
 
-	let supported = matches!(
-		segments.as_slice(),
-		[] | ["search"] | ["comments", _, ..] | ["r" | "user", _] | ["r", _, "comments" | "wiki", ..]
-	);
+	let supported = matches!(segments.as_slice(), [] | ["comments", _, ..] | ["r" | "user", _] | ["r", _, "comments" | "wiki", ..]);
 	if !supported {
 		return None;
 	}

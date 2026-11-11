@@ -8,8 +8,6 @@ const FEED: &str = "97046e2a48050f10a507db354a8da60955ffccb586dcf63163bdfc6610d5
 const POPULAR: &str = "728c0f9a4d12c17b8cffe07669bb1a8770b0f2ec0c84e040485f8fad2d9c417f";
 const ALL: &str = "0e9c0045dd244e934efd0ea4fefc00cb0b4d91523e2f09c8af075856cb59b937";
 const BY_IDS: &str = "0e471495bcba33554b6c540b3cf1cae23dd5432a8b741dddc7fd6717dc2520a7";
-const SEARCH: &str = "8610e33521c90caa8d12576800c18b708ce0d19df3dfac8e2aad55d9860e4bf9";
-const COMMUNITY_SEARCH: &str = "a3333069c1ead3ceec6d9bf4da4185ff584f69d0ba8b586e545b32ea62170932";
 const COMMUNITY: &str = "6b9c1679e69097e1c6df364adc11183afe6e2b6545dd1c0c1cc8f7490448c3e5";
 const USER_PROFILE: &str = "a05c628c5469c6b107c85988a8b1d0b79a2e7b6150ebd3a449c67e226e975ddc";
 const USER_DATE: &str = "1412e2c935de284ee35ec458baabc6920b530d87309da5eecdaa8b83f87f36c4";
@@ -25,45 +23,6 @@ pub(super) async fn route(client: &RedditClient, path: &str) -> Option<Result<Va
 	let get = |name: &str| params.iter().find(|(key, _)| key == name).map(|(_, value)| value.as_ref());
 	if let Some(ids) = route.strip_prefix("/by_id/") {
 		return Some(by_ids(client, ids.split(',').map(str::to_owned).collect()).await);
-	}
-	if route == "/search" && matches!(get("type"), None | Some("link")) {
-		return Some(
-			search(
-				client,
-				get("q").unwrap_or(""),
-				get("sort").unwrap_or("relevance"),
-				get("t").unwrap_or("all"),
-				get("after"),
-				get("limit"),
-				get("include_over_18"),
-			)
-			.await,
-		);
-	}
-	if let ["r", name, "search"] = route.trim_matches('/').split('/').collect::<Vec<_>>().as_slice() {
-		if matches!(get("type"), None | Some("link")) {
-			let q = get("q").unwrap_or("");
-			let scoped = if get("restrict_sr").is_some_and(|value| value != "false") {
-				format!("subreddit:{name} {q}")
-			} else {
-				q.to_owned()
-			};
-			return Some(
-				search(
-					client,
-					&scoped,
-					get("sort").unwrap_or("relevance"),
-					get("t").unwrap_or("all"),
-					get("after"),
-					get("limit"),
-					get("include_over_18"),
-				)
-				.await,
-			);
-		}
-	}
-	if route == "/subreddits/search" {
-		return Some(community_search(client, get("q").unwrap_or(""), get("limit")).await);
 	}
 	let pieces: Vec<_> = route.trim_matches('/').split('/').collect();
 	if let ["user", name, "about"] = pieces.as_slice() {
@@ -223,29 +182,6 @@ async fn by_ids(client: &RedditClient, ids: Vec<String>) -> Result<Value, Client
 		.map(post)
 		.collect::<Result<Vec<_>, _>>()?;
 	Ok(listing(posts, None))
-}
-
-async fn search(client: &RedditClient, text: &str, sort: &str, range: &str, after: Option<&str>, limit: Option<&str>, nsfw: Option<&str>) -> Result<Value, ClientError> {
-	let mut vars = json!({"query":text,"sort":sort.to_ascii_uppercase(),"filters":[{"key":"time_range","value":range},{"key":"nsfw","value":if nsfw == Some("true") || nsfw == Some("on") { "1" } else { "0" }}],"pageSize":limit.and_then(|n| n.parse::<u8>().ok()).unwrap_or(25),"productSurface":"android"});
-	if let Some(after) = after {
-		vars["afterCursor"] = after.into();
-	}
-	let response = client.graphql("SearchPosts", SEARCH, vars).await?;
-	let (posts, after) = edges(response.pointer("/data/search/general/posts").ok_or_else(missing)?)?;
-	Ok(listing(posts, after))
-}
-
-async fn community_search(client: &RedditClient, text: &str, limit: Option<&str>) -> Result<Value, ClientError> {
-	let response = client
-		.graphql(
-			"SearchCommunities",
-			COMMUNITY_SEARCH,
-			json!({"query":text,"pageSize":limit.and_then(|n| n.parse::<u8>().ok()).unwrap_or(25),"productSurface":"android"}),
-		)
-		.await?;
-	let nodes = response.pointer("/data/search/general/communities/edges").and_then(Value::as_array).ok_or_else(missing)?;
-	let items = nodes.iter().filter_map(|edge| edge.get("node")).map(subreddit).collect::<Result<_, _>>()?;
-	Ok(listing(items, None))
 }
 
 async fn community(client: &RedditClient, name: &str) -> Result<Value, ClientError> {
@@ -629,9 +565,8 @@ mod tests {
 	}
 
 	#[test]
-	fn decodes_feed_cursor_without_mangling_search_cursor() {
+	fn decodes_feed_cursor() {
 		assert_eq!(cursor(&json!(STANDARD.encode("t3_abc123"))).as_deref(), Some("t3_abc123"));
-		assert_eq!(cursor(&json!("24")).as_deref(), Some("24"));
 	}
 
 	#[test]

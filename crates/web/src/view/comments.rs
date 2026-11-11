@@ -9,15 +9,6 @@ pub fn comment_tree(children: &[CommentChild], link_id: &str, sort: &str, render
 	tree
 }
 
-pub fn search_comment_tree(comments: &[Comment], renderer: markdown::Renderer<'_>) -> Vec<CommentTreeEvent> {
-	let mut tree = Vec::with_capacity(comments.len() * 2);
-	for comment in comments {
-		tree.push(CommentTreeEvent::Open(Box::new(comment_view(comment, renderer))));
-		tree.push(CommentTreeEvent::Close);
-	}
-	tree
-}
-
 fn append_comments(children: &[CommentChild], link_id: &str, sort: &str, renderer: markdown::Renderer<'_>, tree: &mut Vec<CommentTreeEvent>) {
 	for child in children {
 		match child {

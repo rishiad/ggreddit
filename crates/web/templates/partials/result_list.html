@@ -1,6 +1,6 @@
 <ol class="feed" aria-label="Results">
   {% for result in results %}
-    <li class="story search-result" data-fullname="{{ result.fullname }}">
+    <li class="story" data-fullname="{{ result.fullname }}">
       <div class="score" aria-label="{{ result.metric }} {{ result.metric_label }}">{{ result.metric }}</div>
       <article class="story-body">
         <div class="title-line">
@@ -10,10 +10,6 @@
             {% when None %}
           {% endmatch %}
         </div>
-        {% match result.summary %}
-          {% when Some with (summary) %}<p class="search-summary">{{ summary }}</p>
-          {% when None %}
-        {% endmatch %}
         <div class="metadata">
           <span class="mobile-metric">{{ result.metric }} {{ result.metric_label }}</span>
           {% for metadata in result.metadata %}

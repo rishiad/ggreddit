@@ -3,7 +3,6 @@
 mod app;
 mod error;
 mod markdown;
-mod search;
 mod view;
 
 pub use error::html_error_pages;
@@ -79,7 +78,6 @@ pub fn router(service: RedditService, media: MediaProxy, image_display: ImageDis
 	};
 	let mut app = Router::new()
 		.route("/", get(app::front_page))
-		.route("/search", get(search::page))
 		.route("/more-comments", get(app::more_comments))
 		.route("/gallery/{article}/{index}", get(app::gallery))
 		.route("/post-content/{article}", get(app::post_content))
@@ -111,7 +109,7 @@ pub fn router(service: RedditService, media: MediaProxy, image_display: ImageDis
 }
 
 fn system_routes() -> Router {
-	health_router().route("/assets/app.css", get(stylesheet)).route("/search/controls", get(search::controls))
+	health_router().route("/assets/app.css", get(stylesheet))
 }
 
 pub fn health_router() -> Router {

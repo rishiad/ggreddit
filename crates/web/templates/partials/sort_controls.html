@@ -1,6 +1,5 @@
 <nav class="sort-controls" aria-label="{{ controls.label }}">
   <form action="{{ controls.action }}" method="get" hx-boost="true" hx-trigger="change">
-    {% if !controls.query.is_empty() %}<input type="hidden" name="q" value="{{ controls.query }}">{% endif %}
     <label>
       <span class="visually-hidden">{{ controls.choice_label }}</span>
       <select name="sort">

@@ -6,9 +6,7 @@ use neddit_api::{
 	media::MediaSigner,
 	models::{Post, PostComments, PublicThing},
 	server::MediaProxy,
-	service::{
-		CommentQuery, CommentSort, ListingQuery, ListingTime, PostSort, RedditService, ServiceError, ThreadCommentSearchQuery, UserHistoryQuery, UserHistorySort, WikiPageQuery,
-	},
+	service::{CommentQuery, CommentSort, ListingQuery, ListingTime, PostSort, RedditService, ServiceError, UserHistoryQuery, UserHistorySort, WikiPageQuery},
 };
 use serde::Deserialize;
 
@@ -16,9 +14,9 @@ use crate::{
 	error::AppError,
 	markdown,
 	view::{
-		comment_sort_controls, comment_tree, community_view, feed_controls, feed_item, feed_pagination, gallery_view, generated_wiki_index, has_public_wiki_pages, has_wiki_page,
-		is_external_video, post_result, post_view, search_comment_tree, search_result, subreddit_feed_item, user_controls, user_profile, wiki_path, wiki_view, FeedTemplate,
-		GalleryTemplate, MoreCommentsTemplate, PostContentTemplate, PostTemplate, SearchResultView, SubredditTemplate, UserTemplate, VideoPlayerTemplate, WikiTemplate,
+		activity_result, comment_sort_controls, comment_tree, community_view, feed_controls, feed_item, feed_pagination, gallery_view, generated_wiki_index,
+		has_public_wiki_pages, has_wiki_page, is_external_video, post_result, post_view, subreddit_feed_item, user_controls, user_profile, wiki_path, wiki_view, ActivityItem,
+		FeedTemplate, GalleryTemplate, MoreCommentsTemplate, PostContentTemplate, PostTemplate, SubredditTemplate, UserTemplate, VideoPlayerTemplate, WikiTemplate,
 	},
 	ImageDisplay,
 };
@@ -60,7 +58,6 @@ impl FeedQuery {
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct PostQuery {
 	sort: Option<String>,
-	q: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -159,7 +156,7 @@ enum UserSection {
 struct UserActivityPage {
 	before: Option<String>,
 	after: Option<String>,
-	results: Vec<SearchResultView>,
+	results: Vec<ActivityItem>,
 }
 
 pub async fn user_posts(state: State<RedditService>, signer: State<MediaSigner>, path: Path<String>, query: Query<FeedQuery>) -> Result<UserTemplate, AppError> {
@@ -231,7 +228,7 @@ async fn user_activity(
 				.before
 				.clone()
 				.or_else(|| listing.data.children.first().map(public_fullname).map(str::to_owned));
-			let results = listing.data.children.iter().filter_map(|item| search_result(item, signer)).collect();
+			let results = listing.data.children.iter().filter_map(|item| activity_result(item, signer)).collect();
 			Ok(UserActivityPage {
 				before,
 				after: listing.data.after,
@@ -416,44 +413,25 @@ async fn post_page(
 ) -> Result<PostTemplate, AppError> {
 	let renderer = markdown::Renderer::new(&signer, media.image_display);
 	let (sort, sort_name) = parse_comment_sort(query.sort.as_deref())?;
-	let search = query.q.map(|value| value.trim().to_owned()).filter(|value| !value.is_empty());
-	if search.as_ref().is_some_and(|value| value.chars().count() > 512) {
-		return Err(AppError::InvalidCommentSearch);
-	}
 	let comment_query = CommentQuery {
 		comment,
 		sort: Some(sort),
 		..CommentQuery::default()
 	};
-	let (post, comment_tree, result_count) = if let Some(search) = &search {
-		let post = post_by_id(&service, &article).await?;
-		let comments = service
-			.search_post_comments(&post.subreddit, &article, &ThreadCommentSearchQuery { query: search.clone(), sort })
-			.await?;
-		let count = comments.len();
-		(post, search_comment_tree(&comments, renderer), count)
-	} else {
-		let PostComments(posts, comments) = match subreddit {
-			Some(subreddit) => service.subreddit_post_comments(&subreddit, &article, &comment_query).await?,
-			None => service.post_comments(&article, &comment_query).await?,
-		};
-		let post = posts.data.children.into_iter().next().ok_or(AppError::PostNotFound)?.data;
-		let link_id = post.name.clone();
-		let tree = comment_tree(&comments.data.children, &link_id, sort_name, renderer);
-		(post, tree, 0)
+	let PostComments(posts, comments) = match subreddit {
+		Some(subreddit) => service.subreddit_post_comments(&subreddit, &article, &comment_query).await?,
+		None => service.post_comments(&article, &comment_query).await?,
 	};
+	let post = posts.data.children.into_iter().next().ok_or(AppError::PostNotFound)?.data;
+	let link_id = post.name.clone();
+	let comment_tree = comment_tree(&comments.data.children, &link_id, sort_name, renderer);
 	let comment_count = post.num_comments;
 	let post = post_view(&post, &signer, media.video.video_allowed(&post.url), media.image_display);
-	let search_query = search.as_deref().unwrap_or_default();
 
 	Ok(PostTemplate {
-		controls: comment_sort_controls(sort_name, &post.item.permalink, search_query),
-		comments_heading: if search.is_some() {
-			format!("{result_count} matching comment{}", if result_count == 1 { "" } else { "s" })
-		} else {
-			format!("{} comment{}", post.item.comments, if comment_count == 1 { "" } else { "s" })
-		},
-		empty_message: if search.is_some() { "No comments matched." } else { "No comments yet." },
+		controls: comment_sort_controls(sort_name, &post.item.permalink),
+		comments_heading: format!("{} comment{}", post.item.comments, if comment_count == 1 { "" } else { "s" }),
+		empty_message: "No comments yet.",
 		has_comments: !comment_tree.is_empty(),
 		post,
 		comment_tree,

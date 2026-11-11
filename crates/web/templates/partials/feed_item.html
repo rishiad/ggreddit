@@ -4,7 +4,7 @@
     <div class="title-line">
       <a class="story-title" href="{{ item.href }}">{{ item.title }}</a>
       {% if item.show_domain %}<span class="domain">({{ item.domain }})</span>{% endif %}
-      {% match item.flair %}{% when Some with (flair) %}<a class="post-flair" href="{{ flair.href }}">{{ flair.text }}</a>{% when None %}{% endmatch %}
+      {% match item.flair %}{% when Some with (flair) %}<span class="post-flair">{{ flair.text }}</span>{% when None %}{% endmatch %}
       {% for badge in item.badges %}<span class="badge">{{ badge }}</span>{% endfor %}
     </div>
     <div class="metadata">

@@ -12,7 +12,6 @@ use uuid::Uuid;
 pub struct RedditService {
 	pub(super) client: RedditClient,
 	pub(super) more_children_gate: Arc<Semaphore>,
-	pub(crate) search_sessions: Arc<crate::search::Sessions>,
 	pub(crate) content: ContentPolicy,
 }
 
@@ -25,7 +24,6 @@ impl RedditService {
 		Self {
 			client,
 			more_children_gate: Arc::new(Semaphore::new(1)),
-			search_sessions: Arc::new(crate::search::Sessions::default()),
 			content,
 		}
 	}
@@ -43,16 +41,6 @@ impl RedditService {
 			return Err(invalid_parameter("sort", sort.as_str()));
 		}
 		self.post_listing(Some("all"), sort, query).await
-	}
-
-	pub(crate) async fn recent_ql_comments(&self, community: &str, query: &ListingQuery) -> Result<Listing<crate::models::PublicThing>, ServiceError> {
-		validate_subreddit(community)?;
-		validate_listing_query(query)?;
-		let path = with_query(format!("/r/{community}/comments"), query_codec::encode(query));
-		let json = self.client.json(path).await?;
-		let mut listing = crate::parsing::parse_user_comment_listing(&json)?;
-		self.content.filter_public(&mut listing);
-		Ok(listing)
 	}
 
 	pub async fn subreddit_posts(&self, subreddit: &str, sort: PostSort, query: &ListingQuery) -> Result<Listing<Thing<Post>>, ServiceError> {
@@ -128,23 +116,6 @@ impl RedditService {
 	pub async fn subreddits(&self, sort: SubredditSort, query: &ListingQuery) -> Result<Listing<Thing<Subreddit>>, ServiceError> {
 		validate_listing_query(query)?;
 		let path = with_query(format!("/subreddits/{}", sort.as_str()), query_codec::encode(query));
-		let json = self.client.json(path).await?;
-		let mut listing = parse_subreddit_listing(&json)?;
-		clear_listing_modhash(&mut listing);
-		self.content.filter_subreddits(&mut listing);
-		Ok(listing)
-	}
-
-	pub async fn search_subreddits(&self, query: &SubredditSearchQuery) -> Result<Listing<Thing<Subreddit>>, ServiceError> {
-		validate_subreddit_search_query(query)?;
-		if !self.content.allows_nsfw() && query.include_over_18 == Some(true) {
-			return Err(ServiceError::ContentBlocked);
-		}
-		let mut query = query.clone();
-		if !self.content.allows_nsfw() {
-			query.include_over_18 = Some(false);
-		}
-		let path = with_query("/subreddits/search".to_string(), query_codec::encode(&query));
 		let json = self.client.json(path).await?;
 		let mut listing = parse_subreddit_listing(&json)?;
 		clear_listing_modhash(&mut listing);
@@ -247,17 +218,6 @@ fn validate_comment_query(query: &CommentQuery) -> Result<(), ServiceError> {
 	}
 	if query.truncate.is_some_and(|truncate| truncate > 50) {
 		return Err(invalid_parameter("truncate", &query.truncate.unwrap_or_default().to_string()));
-	}
-	Ok(())
-}
-
-fn validate_subreddit_search_query(query: &SubredditSearchQuery) -> Result<(), ServiceError> {
-	validate_listing_query(&query.listing)?;
-	if query.query.is_empty() {
-		return Err(invalid_parameter("q", ""));
-	}
-	if let Some(search_query_id) = &query.search_query_id {
-		Uuid::parse_str(search_query_id).map_err(|_| invalid_parameter("search_query_id", search_query_id))?;
 	}
 	Ok(())
 }
@@ -529,41 +489,6 @@ mod post_sort {
 	}
 }
 
-mod subreddit_search_query {
-	use crate::service::ListingQuery;
-
-	#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-	#[serde(rename_all = "lowercase")]
-	pub enum SubredditSearchSort {
-		Relevance,
-		Activity,
-	}
-
-	#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-	pub enum Typeahead {
-		#[serde(rename = "true")]
-		True,
-		#[serde(rename = "false")]
-		False,
-		#[serde(rename = "None")]
-		None,
-	}
-
-	#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-	pub struct SubredditSearchQuery {
-		#[serde(flatten)]
-		pub listing: ListingQuery,
-		#[serde(rename = "q")]
-		pub query: String,
-		pub search_query_id: Option<String>,
-		pub show_users: Option<bool>,
-		#[serde(default, with = "crate::service::query_codec::option_on_off", skip_serializing_if = "Option::is_none")]
-		pub include_over_18: Option<bool>,
-		pub sort: Option<SubredditSearchSort>,
-		pub typeahead_active: Option<Typeahead>,
-	}
-}
-
 mod subreddit_sort {
 	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 	pub enum SubredditSort {
@@ -587,5 +512,4 @@ pub use comment_query::{CommentQuery, CommentSort, CommentTheme};
 pub use duplicate_query::{DuplicateQuery, DuplicateSort};
 pub use listing_query::{ListingQuery, ListingShow, ListingTime};
 pub use post_sort::PostSort;
-pub use subreddit_search_query::{SubredditSearchQuery, SubredditSearchSort, Typeahead};
 pub use subreddit_sort::SubredditSort;

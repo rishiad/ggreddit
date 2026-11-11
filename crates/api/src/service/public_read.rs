@@ -1,27 +1,13 @@
-use crate::models::{Listing, Post, PublicThing, Subreddit, Thing, TrophyList, User};
+use crate::models::{Listing, Post, PublicThing, Subreddit, Thing, TrophyList};
 
-use crate::parsing::{
-	parse_info_listing, parse_post_listing, parse_search_listing, parse_subreddit_listing, parse_trophy_list, parse_user_comment_listing, parse_user_listing,
-	parse_user_overview_listing,
-};
+use crate::parsing::{parse_info_listing, parse_post_listing, parse_subreddit_listing, parse_trophy_list, parse_user_comment_listing, parse_user_overview_listing};
 use crate::service::query_codec;
 use crate::service::reddit::{invalid_parameter, validate_listing_query, validate_listing_query_with, validate_subreddit, validate_username, with_query};
 use crate::service::sanitize::{clear_listing_modhash, clear_public_listing_modhash};
 use crate::service::{RedditService, ServiceError};
 use url::Url;
-use uuid::Uuid;
 
 impl RedditService {
-	pub async fn search(&self, query: &SearchQuery) -> Result<Listing<PublicThing>, ServiceError> {
-		self.search_listing(None, query).await
-	}
-
-	pub async fn search_subreddit(&self, subreddit: &str, query: &SearchQuery) -> Result<Listing<PublicThing>, ServiceError> {
-		validate_subreddit(subreddit)?;
-		self.require_safe_subreddit(subreddit).await?;
-		self.search_listing(Some(subreddit), query).await
-	}
-
 	pub async fn info(&self, query: &InfoQuery) -> Result<Listing<PublicThing>, ServiceError> {
 		self.info_listing(None, query).await
 	}
@@ -111,36 +97,6 @@ impl RedditService {
 		Ok(listing)
 	}
 
-	pub async fn search_users(&self, query: &UserSearchQuery) -> Result<Listing<Thing<User>>, ServiceError> {
-		validate_user_search_query(query)?;
-		let path = with_query("/users/search".to_string(), query_codec::encode(query));
-		let json = self.client.json(path).await?;
-		let mut listing = parse_user_listing(&json)?;
-		clear_listing_modhash(&mut listing);
-		self.content.filter_users(&mut listing);
-		Ok(listing)
-	}
-
-	async fn search_listing(&self, subreddit: Option<&str>, query: &SearchQuery) -> Result<Listing<PublicThing>, ServiceError> {
-		validate_search_query(query)?;
-		if !self.content.allows_nsfw() && query.include_over_18 == Some(true) {
-			return Err(ServiceError::ContentBlocked);
-		}
-		let mut query = query.clone();
-		if !self.content.allows_nsfw() {
-			query.include_over_18 = Some(false);
-		}
-		let base = match subreddit {
-			Some(subreddit) => format!("/r/{subreddit}/search"),
-			None => "/search".to_string(),
-		};
-		let json = self.client.json(with_query(base, query_codec::encode(&query))).await?;
-		let mut listing = parse_search_listing(&json)?;
-		clear_listing_modhash(&mut listing);
-		self.content.filter_public(&mut listing);
-		Ok(listing)
-	}
-
 	async fn info_listing(&self, subreddit: Option<&str>, query: &InfoQuery) -> Result<Listing<PublicThing>, ServiceError> {
 		validate_info_query(query)?;
 		let base = match subreddit {
@@ -153,26 +109,6 @@ impl RedditService {
 		self.content.filter_public(&mut listing);
 		Ok(listing)
 	}
-}
-
-fn validate_search_query(query: &SearchQuery) -> Result<(), ServiceError> {
-	validate_listing_query_with(&query.listing, |parameter, cursor| {
-		if !cursor.is_empty() && cursor.len() <= 256 && cursor.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'=' | b'_')) {
-			Ok(())
-		} else {
-			Err(ServiceError::InvalidCursor {
-				parameter,
-				cursor: cursor.to_owned(),
-			})
-		}
-	})?;
-	if query.query.is_empty() || query.query.chars().count() > 512 {
-		return Err(invalid_parameter("q", &query.query));
-	}
-	if query.category.as_ref().is_some_and(|category| category.chars().count() > 5) {
-		return Err(invalid_parameter("category", query.category.as_deref().unwrap_or_default()));
-	}
-	Ok(())
 }
 
 fn validate_info_query(query: &InfoQuery) -> Result<(), ServiceError> {
@@ -221,17 +157,6 @@ fn validate_user_history_query(query: &UserHistoryQuery) -> Result<(), ServiceEr
 	Ok(())
 }
 
-fn validate_user_search_query(query: &UserSearchQuery) -> Result<(), ServiceError> {
-	validate_listing_query(&query.listing)?;
-	if query.query.is_empty() {
-		return Err(invalid_parameter("q", ""));
-	}
-	if let Some(search_query_id) = &query.search_query_id {
-		Uuid::parse_str(search_query_id).map_err(|_| invalid_parameter("search_query_id", search_query_id))?;
-	}
-	Ok(())
-}
-
 mod info_query {
 
 	#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -241,76 +166,6 @@ mod info_query {
 		#[serde(rename = "sr_name", default, with = "crate::service::query_codec::comma", skip_serializing_if = "Vec::is_empty")]
 		pub subreddit_names: Vec<String>,
 		pub url: Option<String>,
-	}
-}
-
-mod search_query {
-	use crate::service::ListingQuery;
-	use std::{fmt, str::FromStr};
-
-	#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
-	pub struct SearchQuery {
-		#[serde(flatten)]
-		pub listing: ListingQuery,
-		pub category: Option<String>,
-		pub include_facets: Option<bool>,
-		#[serde(default, with = "crate::service::query_codec::option_on_off", skip_serializing_if = "Option::is_none")]
-		pub include_over_18: Option<bool>,
-		#[serde(rename = "q")]
-		pub query: String,
-		pub restrict_sr: Option<bool>,
-		pub sort: Option<SearchSort>,
-		#[serde(rename = "type", default, with = "crate::service::query_codec::comma", skip_serializing_if = "Vec::is_empty")]
-		pub result_types: Vec<SearchResultType>,
-	}
-
-	#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
-	#[serde(rename_all = "lowercase")]
-	pub enum SearchSort {
-		Relevance,
-		Hot,
-		Top,
-		New,
-		Comments,
-	}
-
-	#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
-	pub enum SearchResultType {
-		#[serde(rename = "sr")]
-		Subreddit,
-		#[serde(rename = "link")]
-		Post,
-		#[serde(rename = "user")]
-		User,
-	}
-
-	impl SearchResultType {
-		pub(super) const fn as_str(self) -> &'static str {
-			match self {
-				Self::Subreddit => "sr",
-				Self::Post => "link",
-				Self::User => "user",
-			}
-		}
-	}
-
-	impl fmt::Display for SearchResultType {
-		fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-			formatter.write_str(self.as_str())
-		}
-	}
-
-	impl FromStr for SearchResultType {
-		type Err = &'static str;
-
-		fn from_str(value: &str) -> Result<Self, Self::Err> {
-			match value {
-				"sr" => Ok(Self::Subreddit),
-				"link" => Ok(Self::Post),
-				"user" => Ok(Self::User),
-				_ => Err("unknown search result type"),
-			}
-		}
 	}
 }
 
@@ -394,21 +249,6 @@ mod user_history_query {
 	}
 }
 
-mod user_search_query {
-	use crate::service::{ListingQuery, SubredditSearchSort, Typeahead};
-
-	#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
-	pub struct UserSearchQuery {
-		#[serde(flatten)]
-		pub listing: ListingQuery,
-		#[serde(rename = "q")]
-		pub query: String,
-		pub search_query_id: Option<String>,
-		pub sort: Option<SubredditSearchSort>,
-		pub typeahead_active: Option<Typeahead>,
-	}
-}
-
 mod subreddit_metadata {
 	use crate::models::Sidebar;
 	use crate::parsing::ParseError;
@@ -429,10 +269,8 @@ mod subreddit_metadata {
 }
 
 pub use info_query::InfoQuery;
-pub use search_query::{SearchQuery, SearchResultType, SearchSort};
 pub use user_directory_sort::UserDirectorySort;
 pub use user_history_query::{UserHistoryQuery, UserHistoryShow, UserHistorySort, UserHistoryType};
-pub use user_search_query::UserSearchQuery;
 
 #[cfg(test)]
 mod graphql_user_history_tests {

@@ -1,5 +1,5 @@
-use crate::models::{Listing, PublicThing, Thing, User};
-use crate::parsing::core::{parse_listing, validate_thing_kind};
+use crate::models::{Listing, PublicThing};
+use crate::parsing::core::parse_listing;
 use crate::parsing::error::ParseError;
 use serde_json::Value;
 
@@ -22,14 +22,6 @@ pub(crate) fn parse_info_listing(json: &Value) -> Result<Listing<PublicThing>, P
 	Ok(listing)
 }
 
-pub(crate) fn parse_search_listing(json: &Value) -> Result<Listing<PublicThing>, ParseError> {
-	let listing = parse_public_listing(json)?;
-	ensure_children(&listing, "search listing child", |child| {
-		matches!(child, PublicThing::User(_) | PublicThing::Post(_) | PublicThing::Subreddit(_))
-	})?;
-	Ok(listing)
-}
-
 pub(crate) fn parse_user_overview_listing(json: &Value) -> Result<Listing<PublicThing>, ParseError> {
 	let listing = parse_public_listing(json)?;
 	ensure_children(&listing, "user overview child", |child| matches!(child, PublicThing::Comment(_) | PublicThing::Post(_)))?;
@@ -39,14 +31,6 @@ pub(crate) fn parse_user_overview_listing(json: &Value) -> Result<Listing<Public
 pub(crate) fn parse_user_comment_listing(json: &Value) -> Result<Listing<PublicThing>, ParseError> {
 	let listing = parse_public_listing(json)?;
 	ensure_children(&listing, "user comment child", |child| matches!(child, PublicThing::Comment(_)))?;
-	Ok(listing)
-}
-
-pub(crate) fn parse_user_listing(json: &Value) -> Result<Listing<Thing<User>>, ParseError> {
-	let listing = parse_listing(json)?;
-	for child in &listing.data.children {
-		validate_thing_kind(child, "t2", "user listing child")?;
-	}
 	Ok(listing)
 }
 

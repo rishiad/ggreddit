@@ -27,19 +27,3 @@ pub(crate) mod comma {
 			.collect()
 	}
 }
-
-pub(crate) mod option_on_off {
-	use super::*;
-
-	pub fn serialize<S: Serializer>(value: &Option<bool>, serializer: S) -> Result<S::Ok, S::Error> {
-		serializer.serialize_str(if value.unwrap_or_default() { "on" } else { "off" })
-	}
-
-	pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<bool>, D::Error> {
-		match String::deserialize(deserializer)?.as_str() {
-			"true" => Ok(Some(true)),
-			"false" => Ok(Some(false)),
-			value => Err(D::Error::custom(format_args!("invalid boolean `{value}`"))),
-		}
-	}
-}

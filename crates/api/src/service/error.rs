@@ -18,8 +18,6 @@ pub enum ServiceError {
 	InvalidLimit { limit: u8 },
 	#[error("invalid `{parameter}` value `{value}`")]
 	InvalidParameter { parameter: &'static str, value: String },
-	#[error("Reddit returned invalid thread comment search results")]
-	InvalidThreadCommentSearch,
 	#[error("Reddit returned invalid GraphQL comments")]
 	InvalidGraphqlComments,
 	#[error("this server has NSFW disabled")]

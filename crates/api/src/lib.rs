@@ -7,7 +7,6 @@ pub mod client;
 pub mod media;
 pub mod models;
 mod parsing;
-pub mod search;
 pub mod server;
 pub mod service;
 pub mod storage;

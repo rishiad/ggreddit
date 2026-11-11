@@ -31,7 +31,6 @@ const EXTERNAL_RANGE_CHUNK: u64 = 8 * 1024 * 1024;
 const MAX_REDDIT_REDIRECTS: usize = 4;
 
 const ALTERNATIVE_REDDIT_URL_BASE: &str = "https://www.reddit.com";
-const ALTERNATIVE_REDDIT_URL_BASE_HOST: &str = "www.reddit.com";
 
 #[derive(Clone)]
 pub struct RedditClient {
@@ -171,14 +170,10 @@ impl RedditClient {
 	/// Makes a GET request to Reddit at `path`. By default, this will honor HTTP
 	/// 3xx codes Reddit returns and will automatically redirect.
 	async fn reddit_get(&self, path: String) -> Result<UpstreamResponse, ClientError> {
-		self.request(&Method::GET, with_raw_json(path), true, REDDIT_URL_BASE, REDDIT_URL_BASE_HOST).await
+		self.request(&Method::GET, with_raw_json(path), REDDIT_URL_BASE, REDDIT_URL_BASE_HOST).await
 	}
 
-	async fn reddit_html_get(&self, path: String) -> Result<UpstreamResponse, ClientError> {
-		self.request(&Method::GET, path, false, ALTERNATIVE_REDDIT_URL_BASE, ALTERNATIVE_REDDIT_URL_BASE_HOST).await
-	}
-
-	async fn request(&self, method: &Method, mut path: String, redirect: bool, base_path: &str, host: &str) -> Result<UpstreamResponse, ClientError> {
+	async fn request(&self, method: &Method, mut path: String, base_path: &str, host: &str) -> Result<UpstreamResponse, ClientError> {
 		for redirects in 0..=MAX_REDDIT_REDIRECTS {
 			let url = format!("{base_path}{path}");
 			let lease = self.oauth.acquire().await?;
@@ -195,7 +190,7 @@ impl RedditClient {
 			let result = builder.send().await;
 			let response = result.map_err(|source| ClientError::Request { url: url.clone(), source })?;
 			let rate_limit_reset = self.observe_rate_limit_headers(generation, &response).await;
-			if !response.status().is_redirection() || !redirect {
+			if !response.status().is_redirection() {
 				return Ok(UpstreamResponse {
 					response,
 					lease,
@@ -223,37 +218,6 @@ impl RedditClient {
 			drop(lease);
 		}
 		Err(ClientError::TooManyRedirects { path })
-	}
-
-	/// Make a bounded request to a Reddit WWW endpoint and return its HTML.
-	pub async fn html(&self, path: String) -> Result<String, ClientError> {
-		let UpstreamResponse {
-			mut response,
-			lease,
-			rate_limit_reset,
-		} = self.reddit_html_get(path.clone()).await?;
-		let generation = lease.generation();
-		let status = response.status();
-		if response.content_length().is_some_and(|n| n > MAX_UPSTREAM_BYTES as u64) {
-			return Err(ClientError::BodyTooLarge);
-		}
-		let mut body = Vec::new();
-		while let Some(chunk) = response.chunk().await.map_err(|source| ClientError::Body { path: path.clone(), source })? {
-			append_body_chunk(&mut body, &chunk)?;
-		}
-		drop(lease);
-		if status.as_u16() == 429 || body.is_empty() {
-			self.oauth.invalidate(generation).await;
-			return Err(ClientError::RateLimited { reset: rate_limit_reset });
-		}
-		if status.as_u16() == 401 {
-			self.oauth.invalidate(generation).await;
-			return Err(ClientError::Unauthorized);
-		}
-		if !status.is_success() {
-			return Err(ClientError::UnexpectedStatus { path, status: status.as_u16() });
-		}
-		Ok(String::from_utf8_lossy(&body).into_owned())
 	}
 
 	/// Make a request to a Reddit API and parse the JSON response.
