@@ -4,7 +4,7 @@ use axum::{
 };
 use neddit_api::{
 	media::MediaSigner,
-	models::{Post, PostComments, PublicThing},
+	models::{Post, PostComments},
 	service::{CommentQuery, CommentSort, ListingQuery, ListingTime, PostSort, RedditService, ServiceError, UserHistoryQuery, UserHistorySort, WikiPageQuery},
 };
 use serde::Deserialize;
@@ -15,7 +15,7 @@ use crate::{
 	view::{
 		activity_result, comment_sort_controls, comment_tree, community_view, feed_controls, feed_item, feed_pagination, gallery_view, generated_wiki_index,
 		has_public_wiki_pages, has_wiki_page, post_result, post_view, subreddit_feed_item, user_controls, user_profile, wiki_path, wiki_view, ActivityItem, FeedTemplate,
-		GalleryTemplate, MoreCommentsTemplate, PostContentTemplate, PostTemplate, SubredditTemplate, UserTemplate, WikiTemplate,
+		GalleryTemplate, MoreCommentsTemplate, PostContentTemplate, PostTemplate, SubredditTemplate, UserTemplate, WikiTemplate, MAX_HISTORY_BYTES, MAX_HISTORY_PAGES,
 	},
 	ImageDisplay,
 };
@@ -23,29 +23,38 @@ use crate::{
 const PAGE_SIZE: u8 = 25;
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FeedQuery {
 	sort: Option<String>,
 	t: Option<String>,
 	after: Option<String>,
-	before: Option<String>,
-	page: Option<u32>,
+	history: Option<String>,
 }
 
 impl FeedQuery {
-	fn listing(self, time: Option<ListingTime>) -> (ListingQuery, u32) {
-		let page = self.page.unwrap_or(1).max(1);
-		let count = listing_count(page, self.before.is_some());
-		(
+	fn listing(&self, time: Option<ListingTime>) -> Result<(ListingQuery, Vec<String>), AppError> {
+		let history = match &self.history {
+			Some(raw) if raw.len() <= MAX_HISTORY_BYTES => serde_json::from_str::<Vec<String>>(raw).map_err(|_| AppError::InvalidPagination)?,
+			Some(_) => return Err(AppError::InvalidPagination),
+			None => Vec::new(),
+		};
+		if history.len() > MAX_HISTORY_PAGES
+			|| history.first().is_some_and(|cursor| !cursor.is_empty())
+			|| history.iter().skip(1).any(String::is_empty)
+			|| self.after.as_deref().is_some_and(str::is_empty)
+			|| (self.after.is_some() != !history.is_empty())
+		{
+			return Err(AppError::InvalidPagination);
+		}
+		Ok((
 			ListingQuery {
-				after: self.after,
-				before: self.before,
-				count: Some(count),
+				after: self.after.clone(),
 				limit: Some(PAGE_SIZE),
 				time,
 				..ListingQuery::default()
 			},
-			page,
-		)
+			history,
+		))
 	}
 }
 
@@ -79,14 +88,9 @@ pub struct WikiQuery {
 pub async fn front_page(State(service): State<RedditService>, State(signer): State<MediaSigner>, Query(query): Query<FeedQuery>) -> Result<FeedTemplate, AppError> {
 	let (sort, sort_name) = parse_post_sort(query.sort.as_deref(), false)?;
 	let (time, time_name) = parse_time(sort == PostSort::Top, query.t.as_deref())?;
-	let (listing_query, page) = query.listing(time);
+	let (listing_query, history) = query.listing(time)?;
 	let listing = service.all_posts(sort, &listing_query).await?;
-	let before = listing
-		.data
-		.before
-		.as_deref()
-		.or_else(|| listing.data.children.first().map(|thing| thing.data.name.as_str()));
-	let pagination = feed_pagination("/", sort_name, time_name, before, listing.data.after.as_deref(), page);
+	let pagination = feed_pagination("/", sort_name, time_name, &history, query.after.as_deref(), listing.data.after.as_deref());
 	let items = listing.data.children.iter().map(|thing| feed_item(&thing.data, &signer)).collect();
 
 	Ok(FeedTemplate {
@@ -105,14 +109,16 @@ pub async fn subreddit_feed(
 ) -> Result<SubredditTemplate, AppError> {
 	let (sort, sort_name) = parse_post_sort(query.sort.as_deref(), true)?;
 	let (time, time_name) = parse_time(sort == PostSort::Top, query.t.as_deref())?;
-	let (listing_query, page) = query.listing(time);
+	let (listing_query, history) = query.listing(time)?;
 	let (listing, community) = tokio::try_join!(service.subreddit_posts(&subreddit, sort, &listing_query), service.subreddit_about(&subreddit),)?;
-	let before = listing
-		.data
-		.before
-		.as_deref()
-		.or_else(|| listing.data.children.first().map(|thing| thing.data.name.as_str()));
-	let pagination = feed_pagination(&format!("/r/{subreddit}"), sort_name, time_name, before, listing.data.after.as_deref(), page);
+	let pagination = feed_pagination(
+		&format!("/r/{subreddit}"),
+		sort_name,
+		time_name,
+		&history,
+		query.after.as_deref(),
+		listing.data.after.as_deref(),
+	);
 	let subreddit_is_nsfw = community.data.over18 == Some(true);
 	let items = listing
 		.data
@@ -143,7 +149,6 @@ enum UserSection {
 }
 
 struct UserActivityPage {
-	before: Option<String>,
 	after: Option<String>,
 	results: Vec<ActivityItem>,
 }
@@ -165,7 +170,7 @@ async fn user_page(
 ) -> Result<UserTemplate, AppError> {
 	let (sort, sort_name) = parse_user_sort(query.sort.as_deref())?;
 	let (time, time_name) = parse_time(sort == UserHistorySort::Top, query.t.as_deref())?;
-	let (listing, page) = query.listing(time);
+	let (listing, history) = query.listing(time)?;
 	let history_query = UserHistoryQuery {
 		listing,
 		sort: Some(sort),
@@ -178,7 +183,7 @@ async fn user_page(
 		UserSection::Posts => (&posts_url, true, false),
 		UserSection::Comments => (&comments_url, false, true),
 	};
-	let pagination = feed_pagination(base, sort_name, time_name, activity.before.as_deref(), activity.after.as_deref(), page);
+	let pagination = feed_pagination(base, sort_name, time_name, &history, query.after.as_deref(), activity.after.as_deref());
 
 	Ok(UserTemplate {
 		profile: user_profile(&user.data),
@@ -202,43 +207,21 @@ async fn user_activity(
 	match section {
 		UserSection::Posts => {
 			let listing = service.user_submitted(username, query).await?;
-			let before = listing.data.before.clone().or_else(|| listing.data.children.first().map(|thing| thing.data.name.clone()));
 			let results = listing.data.children.iter().map(|thing| post_result(&thing.data, signer)).collect();
 			Ok(UserActivityPage {
-				before,
 				after: listing.data.after,
 				results,
 			})
 		}
 		UserSection::Comments => {
 			let listing = service.user_comments(username, query).await?;
-			let before = listing
-				.data
-				.before
-				.clone()
-				.or_else(|| listing.data.children.first().map(public_fullname).map(str::to_owned));
 			let results = listing.data.children.iter().filter_map(|item| activity_result(item, signer)).collect();
 			Ok(UserActivityPage {
-				before,
 				after: listing.data.after,
 				results,
 			})
 		}
 	}
-}
-
-fn public_fullname(item: &PublicThing) -> &str {
-	match item {
-		PublicThing::Comment(thing) => &thing.data.name,
-		PublicThing::User(thing) => &thing.data.name,
-		PublicThing::Post(thing) => &thing.data.name,
-		PublicThing::Subreddit(thing) => &thing.data.name,
-	}
-}
-
-fn listing_count(page: u32, before: bool) -> u32 {
-	let traversed_pages = if before { page } else { page.saturating_sub(1) };
-	traversed_pages.saturating_mul(u32::from(PAGE_SIZE))
 }
 
 pub async fn wiki_root(

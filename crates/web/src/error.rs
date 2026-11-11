@@ -34,6 +34,8 @@ struct ErrorTemplate {
 
 #[derive(Debug, Error)]
 pub enum AppError {
+	#[error("invalid pagination cursor history")]
+	InvalidPagination,
 	#[error("invalid feed sort")]
 	InvalidSort,
 	#[error("invalid feed time")]
@@ -52,7 +54,7 @@ impl IntoResponse for AppError {
 			return response_with_description(StatusCode::FORBIDDEN, "This server has NSFW disabled.");
 		}
 		let status = match self {
-			Self::InvalidSort | Self::InvalidFeedTime | Self::InvalidCommentSort => StatusCode::BAD_REQUEST,
+			Self::InvalidPagination | Self::InvalidSort | Self::InvalidFeedTime | Self::InvalidCommentSort => StatusCode::BAD_REQUEST,
 			Self::PostNotFound => StatusCode::NOT_FOUND,
 			Self::Service(_) => StatusCode::BAD_GATEWAY,
 		};

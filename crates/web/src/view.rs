@@ -682,20 +682,26 @@ pub fn pagination(page: u32, previous_url: String, next_url: String) -> Paginati
 	}
 }
 
-pub fn feed_pagination(base: &str, sort: &str, time: &str, before: Option<&str>, after: Option<&str>, page: u32) -> Pagination {
-	let previous_url = if page > 1 {
-		listing_page_url(base, sort, time, "before", before, page.saturating_sub(1))
-	} else {
-		String::new()
-	};
-	let next_url = listing_page_url(base, sort, time, "after", after, page.saturating_add(1));
-	pagination(page, previous_url, next_url)
+pub(crate) const MAX_HISTORY_PAGES: usize = 16;
+pub(crate) const MAX_HISTORY_BYTES: usize = 2048;
+
+pub fn feed_pagination(base: &str, sort: &str, time: &str, history: &[String], current_after: Option<&str>, next_after: Option<&str>) -> Pagination {
+	let previous_url = history.last().map_or_else(String::new, |cursor| {
+		listing_page_url(base, sort, time, (!cursor.is_empty()).then_some(cursor), &history[..history.len() - 1])
+	});
+	let mut next_history = history.to_vec();
+	next_history.push(current_after.unwrap_or_default().to_owned());
+	let next_url = next_after
+		.filter(|_| next_history.len() <= MAX_HISTORY_PAGES)
+		.and_then(|cursor| {
+			let json = serde_json::to_string(&next_history).ok()?;
+			(json.len() <= MAX_HISTORY_BYTES).then(|| listing_page_url(base, sort, time, Some(cursor), &next_history))
+		})
+		.unwrap_or_default();
+	pagination(history.len() as u32 + 1, previous_url, next_url)
 }
 
-fn listing_page_url(base: &str, sort: &str, time: &str, cursor_name: &str, cursor: Option<&str>, page: u32) -> String {
-	let Some(cursor) = cursor else {
-		return String::new();
-	};
+fn listing_page_url(base: &str, sort: &str, time: &str, cursor: Option<&str>, history: &[String]) -> String {
 	let mut query = form_urlencoded::Serializer::new(String::new());
 	if sort != "hot" {
 		query.append_pair("sort", sort);
@@ -703,11 +709,18 @@ fn listing_page_url(base: &str, sort: &str, time: &str, cursor_name: &str, curso
 	if sort == "top" {
 		query.append_pair("t", time);
 	}
-	query.append_pair(cursor_name, cursor);
-	if page > 1 {
-		query.append_pair("page", &page.to_string());
+	if let Some(cursor) = cursor {
+		query.append_pair("after", cursor);
 	}
-	format!("{base}?{}", query.finish())
+	if !history.is_empty() {
+		query.append_pair("history", &serde_json::to_string(history).expect("cursor history is serializable"));
+	}
+	let encoded = query.finish();
+	if encoded.is_empty() {
+		base.to_owned()
+	} else {
+		format!("{base}?{encoded}")
+	}
 }
 
 pub(crate) fn wiki_path(subreddit: &str, page: &str) -> String {
