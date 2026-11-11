@@ -1,10 +1,8 @@
 use crate::models::{WikiPage, WikiPageListing};
 use crate::parsing::{parse_wiki_page, parse_wiki_page_listing};
-use crate::service::query_codec;
-use crate::service::reddit::{invalid_parameter, validate_subreddit, with_query};
+use crate::service::reddit::{invalid_parameter, validate_subreddit};
 use crate::service::{RedditService, ServiceError};
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
-use uuid::Uuid;
 
 impl RedditService {
 	pub async fn wiki_pages(&self, subreddit: &str) -> Result<WikiPageListing, ServiceError> {
@@ -17,9 +15,11 @@ impl RedditService {
 	pub async fn wiki_page(&self, subreddit: &str, page: &str, query: &WikiPageQuery) -> Result<WikiPage, ServiceError> {
 		validate_subreddit(subreddit)?;
 		self.require_safe_subreddit(subreddit).await?;
+		if query.v.is_some() || query.v2.is_some() {
+			return Err(ServiceError::UnsupportedWikiRevision);
+		}
 		let page = encode_wiki_page(page)?;
-		validate_wiki_page_query(query)?;
-		let path = with_query(format!("/r/{subreddit}/wiki/{page}"), query_codec::encode(query));
+		let path = format!("/r/{subreddit}/wiki/{page}");
 		let json = self.client.json(path).await?;
 		Ok(parse_wiki_page(&json)?)
 	}
@@ -39,18 +39,9 @@ fn encode_wiki_page(page: &str) -> Result<String, ServiceError> {
 	)
 }
 
-fn validate_wiki_page_query(query: &WikiPageQuery) -> Result<(), ServiceError> {
-	for (name, value) in [("v", &query.v), ("v2", &query.v2)] {
-		if let Some(value) = value {
-			Uuid::parse_str(value).map_err(|_| invalid_parameter(name, value))?;
-		}
-	}
-	Ok(())
-}
-
 mod wiki_page_query {
 
-	#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+	#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
 	pub struct WikiPageQuery {
 		pub v: Option<String>,
 		pub v2: Option<String>,

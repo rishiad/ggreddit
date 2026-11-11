@@ -10,6 +10,10 @@ pub enum ServiceError {
 	Parse(#[from] ParseError),
 	#[error("invalid subreddit `{subreddit}`")]
 	InvalidSubreddit { subreddit: String },
+	#[error("combined community feeds are not supported")]
+	UnsupportedCombinedFeed,
+	#[error("wiki revisions and diffs are not supported")]
+	UnsupportedWikiRevision,
 	#[error("`after` and `before` cannot be used together")]
 	ConflictingCursors,
 	#[error("invalid `{parameter}` listing cursor `{cursor}`")]

@@ -107,6 +107,9 @@ pub async fn subreddit_feed(
 	Path(subreddit): Path<String>,
 	Query(query): Query<FeedQuery>,
 ) -> Result<SubredditTemplate, AppError> {
+	if subreddit.contains('+') {
+		return Err(ServiceError::UnsupportedCombinedFeed.into());
+	}
 	let (sort, sort_name) = parse_post_sort(query.sort.as_deref(), true)?;
 	let (time, time_name) = parse_time(sort == PostSort::Top, query.t.as_deref())?;
 	let (listing_query, history) = query.listing(time)?;
@@ -229,8 +232,9 @@ pub async fn wiki_root(
 	State(signer): State<MediaSigner>,
 	State(image_display): State<ImageDisplay>,
 	Path(subreddit): Path<String>,
+	Query(query): Query<WikiQuery>,
 ) -> Result<Response, AppError> {
-	wiki_response(service, signer, image_display, subreddit, None, WikiQuery::default()).await
+	wiki_response(service, signer, image_display, subreddit, None, query).await
 }
 
 pub async fn wiki_page(
@@ -251,6 +255,9 @@ async fn wiki_response(
 	requested_page: Option<String>,
 	query: WikiQuery,
 ) -> Result<Response, AppError> {
+	if query.v.is_some() || query.v2.is_some() {
+		return Err(ServiceError::UnsupportedWikiRevision.into());
+	}
 	let query = WikiPageQuery { v: query.v, v2: query.v2 };
 	let (community, pages) = tokio::try_join!(service.subreddit_about(&subreddit), service.wiki_pages(&subreddit),)?;
 	let has_wiki = has_public_wiki_pages(&pages);

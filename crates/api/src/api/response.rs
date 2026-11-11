@@ -28,6 +28,12 @@ impl ApiError {
 		if matches!(self, Self::Service(ServiceError::ContentBlocked)) {
 			return "This server has NSFW disabled";
 		}
+		if matches!(self, Self::Service(ServiceError::UnsupportedCombinedFeed)) {
+			return "Combined community feeds are not supported";
+		}
+		if matches!(self, Self::Service(ServiceError::UnsupportedWikiRevision)) {
+			return "Wiki revisions and diffs are not supported";
+		}
 		match self.status() {
 			StatusCode::BAD_REQUEST => "Bad Request",
 			StatusCode::UNAUTHORIZED => "Unauthorized",
@@ -47,6 +53,7 @@ fn service_status(error: &ServiceError) -> StatusCode {
 		| ServiceError::InvalidLimit { .. }
 		| ServiceError::InvalidParameter { .. } => StatusCode::BAD_REQUEST,
 		ServiceError::ContentBlocked => StatusCode::FORBIDDEN,
+		ServiceError::UnsupportedCombinedFeed | ServiceError::UnsupportedWikiRevision => StatusCode::NOT_IMPLEMENTED,
 		ServiceError::Parse(_) | ServiceError::InvalidGraphqlComments => StatusCode::BAD_GATEWAY,
 		Client(ClientError::Unauthorized) => StatusCode::UNAUTHORIZED,
 		Client(ClientError::RateLimited { .. }) => StatusCode::TOO_MANY_REQUESTS,

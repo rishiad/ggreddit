@@ -29,6 +29,9 @@ impl RedditService {
 
 	pub async fn subreddit_posts(&self, subreddit: &str, sort: PostSort, query: &ListingQuery) -> Result<Listing<Thing<Post>>, ServiceError> {
 		validate_subreddit(subreddit)?;
+		if subreddit.contains('+') {
+			return Err(ServiceError::UnsupportedCombinedFeed);
+		}
 		self.require_safe_subreddit(subreddit).await?;
 		if sort == PostSort::Best {
 			return Err(invalid_parameter("sort", sort.as_str()));
