@@ -1,5 +1,4 @@
 use crate::client::{error::ClientError, RedditClient};
-use crate::media::video::{decode_video_target, rewrite_hls as rewrite_video_hls, validate_video_target, VideoError, VideoPlayback, VideoResolver};
 use crate::media::{MediaSigner, MediaUrlError};
 use axum::{
 	body::{to_bytes, Body},
@@ -28,7 +27,6 @@ const MANIFEST_SIZE_LIMIT: usize = 8 * 1024 * 1024;
 const MAX_MEDIA_REDIRECTS: usize = 4;
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 const MEDIA_CACHE_CONTROL: &str = "public, max-age=604800, immutable";
-const VIDEO_CACHE_CONTROL: &str = "public, max-age=900";
 const HTTP_TARGET: &str = "neddit::http";
 const REQUEST_ID_HEADER: &str = "x-request-id";
 
@@ -45,37 +43,20 @@ impl RequestId {
 pub struct MediaProxy {
 	client: RedditClient,
 	signer: MediaSigner,
-	video: Option<VideoResolver>,
 }
 
 impl MediaProxy {
-	pub fn new(client: RedditClient, signer: MediaSigner, video: Option<VideoResolver>) -> Self {
-		Self { client, signer, video }
+	pub fn new(client: RedditClient, signer: MediaSigner) -> Self {
+		Self { client, signer }
 	}
 
 	pub fn signer(&self) -> &MediaSigner {
 		&self.signer
 	}
-
-	pub const fn video_enabled(&self) -> bool {
-		self.video.is_some()
-	}
-
-	pub fn video_allowed(&self, url: &str) -> bool {
-		self.video.as_ref().is_some_and(|video| video.allows(url))
-	}
-
-	pub async fn resolve_video(&self, url: &str) -> Result<VideoPlayback, VideoError> {
-		self.video.as_ref().ok_or(VideoError::Disabled)?.resolve(url, &self.signer).await
-	}
 }
 
 pub fn router(media: MediaProxy) -> Router {
-	let mut router = Router::new().route("/media/{signature}/{encoded}", get(proxy_media));
-	if media.video.is_some() {
-		router = router.route("/media/video/{signature}/{encoded}", get(proxy_video));
-	}
-	router.with_state(media)
+	Router::new().route("/media/{signature}/{encoded}", get(proxy_media)).with_state(media)
 }
 
 pub fn with_middleware(app: Router) -> Router {
@@ -162,35 +143,13 @@ async fn proxy_media(State(media): State<MediaProxy>, Path((signature, encoded))
 	if request_has_etag(&headers, &etag) {
 		return not_modified(&etag, MEDIA_CACHE_CONTROL);
 	}
-	let (response, target) = follow_redirects(&media, target, &headers, ProxySource::Reddit).await?;
-	finish_proxy_response(response, &target, &media.signer, &etag, MEDIA_CACHE_CONTROL, false).await
+	let (response, target) = follow_redirects(&media, target, &headers).await?;
+	finish_proxy_response(response, &target, &media.signer, &etag, MEDIA_CACHE_CONTROL).await
 }
 
-async fn proxy_video(State(media): State<MediaProxy>, Path((signature, encoded)): Path<(String, String)>, headers: HeaderMap) -> Result<Response, ProxyError> {
-	let video = media.video.as_ref().ok_or(VideoError::Disabled)?;
-	let target = decode_video_target(&media.signer, &signature, &encoded)?;
-	let user_agent = video.user_agent_for(&target).await;
-	let etag = format!("\"{signature}\"");
-	if request_has_etag(&headers, &etag) {
-		return not_modified(&etag, VIDEO_CACHE_CONTROL);
-	}
-	let source = ProxySource::External(user_agent.as_deref());
-	let (response, target) = follow_redirects(&media, target, &headers, source).await?;
-	finish_proxy_response(response, &target, &media.signer, &etag, VIDEO_CACHE_CONTROL, true).await
-}
-
-#[derive(Clone, Copy)]
-enum ProxySource<'a> {
-	Reddit,
-	External(Option<&'a str>),
-}
-
-async fn follow_redirects(media: &MediaProxy, mut target: Url, headers: &HeaderMap, source: ProxySource<'_>) -> Result<(Response, Url), ProxyError> {
+async fn follow_redirects(media: &MediaProxy, mut target: Url, headers: &HeaderMap) -> Result<(Response, Url), ProxyError> {
 	for redirect in 0..=MAX_MEDIA_REDIRECTS {
-		let response = match source {
-			ProxySource::Reddit => media.client.proxy(target.to_string(), headers).await?,
-			ProxySource::External(user_agent) => media.client.proxy_external(target.to_string(), headers, user_agent).await?,
-		};
+		let response = media.client.proxy(target.to_string(), headers).await?;
 		if response.status() == StatusCode::NOT_MODIFIED || !response.status().is_redirection() {
 			return Ok((response, target));
 		}
@@ -204,30 +163,16 @@ async fn follow_redirects(media: &MediaProxy, mut target: Url, headers: &HeaderM
 			.to_str()
 			.map_err(|_| ProxyError::InvalidRedirect)?;
 		let redirected = target.join(location).map_err(|_| ProxyError::InvalidRedirect)?;
-		match source {
-			ProxySource::Reddit => media.signer.validate_media_target(&redirected).map_err(|_| ProxyError::ForbiddenRedirect)?,
-			ProxySource::External(_) => validate_video_target(&redirected).map_err(|_| ProxyError::ForbiddenRedirect)?,
-		}
+		media.signer.validate_media_target(&redirected).map_err(|_| ProxyError::ForbiddenRedirect)?;
 		target = redirected;
 	}
 	Err(ProxyError::TooManyRedirects)
 }
 
-async fn finish_proxy_response(
-	mut response: Response,
-	target: &Url,
-	signer: &MediaSigner,
-	etag: &str,
-	cache_control: &'static str,
-	external_video: bool,
-) -> Result<Response, ProxyError> {
+async fn finish_proxy_response(mut response: Response, target: &Url, signer: &MediaSigner, etag: &str, cache_control: &'static str) -> Result<Response, ProxyError> {
 	if response.status().is_success() && is_hls(&response, target) {
-		response = if external_video {
-			rewrite_manifest(response, |manifest| rewrite_video_hls(manifest, target, signer)).await?
-		} else {
-			rewrite_manifest(response, |manifest| signer.rewrite_hls(manifest, target)).await?
-		};
-	} else if !external_video && response.status().is_success() && is_dash(&response, target) {
+		response = rewrite_manifest(response, |manifest| signer.rewrite_hls(manifest, target)).await?;
+	} else if response.status().is_success() && is_dash(&response, target) {
 		response = rewrite_manifest(response, |manifest| signer.rewrite_dash(manifest, target)).await?;
 	}
 
@@ -301,8 +246,6 @@ fn compressible_content(_: StatusCode, _: Version, headers: &HeaderMap, _: &Exte
 enum ProxyError {
 	#[error(transparent)]
 	MediaUrl(#[from] MediaUrlError),
-	#[error(transparent)]
-	Video(#[from] VideoError),
 	#[error("Reddit media request failed")]
 	Client(#[from] ClientError),
 	#[error("Reddit media redirect omitted its destination")]
@@ -326,7 +269,6 @@ impl IntoResponse for ProxyError {
 		let status = match self {
 			Self::MediaUrl(MediaUrlError::InvalidSignature) | Self::MediaUrl(MediaUrlError::ForbiddenTarget) | Self::ForbiddenRedirect => StatusCode::FORBIDDEN,
 			Self::MediaUrl(MediaUrlError::InvalidEncoding | MediaUrlError::InvalidTarget) => StatusCode::BAD_REQUEST,
-			Self::Video(error) => return error.into_response(),
 			_ => StatusCode::BAD_GATEWAY,
 		};
 		(status, self.to_string()).into_response()

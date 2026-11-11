@@ -7,7 +7,7 @@ use std::{
 use serde::Deserialize;
 use thiserror::Error;
 
-use neddit_api::media::{DomainPolicy, DomainSet, MediaUrlError};
+use neddit_api::media::{DomainPolicy, MediaUrlError};
 use neddit_api::storage::CacheConfig;
 use neddit_web::ImageDisplay;
 
@@ -17,7 +17,6 @@ pub struct Config {
 	pub server: ServerConfig,
 	pub domains: DomainConfig,
 	pub media: MediaConfig,
-	pub video: VideoConfig,
 	pub logging: LoggingConfig,
 	pub cache: CacheConfig,
 }
@@ -45,14 +44,6 @@ pub struct DomainConfig {
 pub struct MediaConfig {
 	pub image_display: ImageDisplay,
 	pub signing_key_file: Option<PathBuf>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct VideoConfig {
-	pub enabled: bool,
-	pub executable: PathBuf,
-	pub excluded_domains: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -108,13 +99,6 @@ impl Config {
 			.listen
 			.parse::<SocketAddr>()
 			.map_err(|_| ConfigError::InvalidListenAddress(self.server.listen.clone()))?;
-		if self.video.executable.as_os_str().is_empty() {
-			return Err(ConfigError::EmptyVideoExecutable);
-		}
-		if self.video.enabled && !self.server.web {
-			return Err(ConfigError::VideoNeedsWeb);
-		}
-		self.video_exclusions()?;
 		self.domain_policy()?;
 		tracing_subscriber::EnvFilter::try_new(&self.logging.filter).map_err(|source| ConfigError::LogFilter { source })?;
 		Ok(())
@@ -127,15 +111,6 @@ impl Config {
 	/// Returns an error when a domain contains a scheme, wildcard, port, or IP address.
 	pub fn domain_policy(&self) -> Result<DomainPolicy, ConfigError> {
 		DomainPolicy::new(&self.domains.navigation, &self.domains.shortlinks, &self.domains.media).map_err(ConfigError::Domains)
-	}
-
-	/// Compile the external video exclusion patterns.
-	///
-	/// # Errors
-	///
-	/// Returns an error when a pattern is not a domain or subdomain wildcard.
-	pub fn video_exclusions(&self) -> Result<DomainSet, ConfigError> {
-		DomainSet::new(&self.video.excluded_domains).map_err(ConfigError::VideoDomains)
 	}
 }
 
@@ -177,16 +152,6 @@ impl Default for DomainConfig {
 	}
 }
 
-impl Default for VideoConfig {
-	fn default() -> Self {
-		Self {
-			enabled: false,
-			executable: "yt-dlp".into(),
-			excluded_domains: Vec::new(),
-		}
-	}
-}
-
 impl Default for LoggingConfig {
 	fn default() -> Self {
 		Self {
@@ -216,12 +181,6 @@ pub enum ConfigError {
 	NoSurface,
 	#[error("server.listen is not a socket address: `{0}`")]
 	InvalidListenAddress(String),
-	#[error("video.executable cannot be empty")]
-	EmptyVideoExecutable,
-	#[error("video.enabled requires server.web")]
-	VideoNeedsWeb,
-	#[error("video.excluded_domains contains an invalid entry")]
-	VideoDomains(#[source] MediaUrlError),
 	#[error("logging.filter is invalid")]
 	LogFilter {
 		#[source]

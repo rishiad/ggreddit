@@ -1159,7 +1159,6 @@ dependencies = [
  "pulldown-cmark",
  "regex",
  "rusqlite",
- "santh-bogon",
  "serde",
  "serde_json",
  "serde_urlencoded",
@@ -1440,12 +1439,6 @@ name = "ryu"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
-
-[[package]]
-name = "santh-bogon"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "314153b8a08c71cb4d04d890fdb3df961482009de56bd10f35b80bb1cd9fe4cb"
 
 [[package]]
 name = "schnellru"

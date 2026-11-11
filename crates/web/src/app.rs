@@ -5,7 +5,6 @@ use axum::{
 use neddit_api::{
 	media::MediaSigner,
 	models::{Post, PostComments, PublicThing},
-	server::MediaProxy,
 	service::{CommentQuery, CommentSort, ListingQuery, ListingTime, PostSort, RedditService, ServiceError, UserHistoryQuery, UserHistorySort, WikiPageQuery},
 };
 use serde::Deserialize;
@@ -15,18 +14,13 @@ use crate::{
 	markdown,
 	view::{
 		activity_result, comment_sort_controls, comment_tree, community_view, feed_controls, feed_item, feed_pagination, gallery_view, generated_wiki_index,
-		has_public_wiki_pages, has_wiki_page, is_external_video, post_result, post_view, subreddit_feed_item, user_controls, user_profile, wiki_path, wiki_view, ActivityItem,
-		FeedTemplate, GalleryTemplate, MoreCommentsTemplate, PostContentTemplate, PostTemplate, SubredditTemplate, UserTemplate, VideoPlayerTemplate, WikiTemplate,
+		has_public_wiki_pages, has_wiki_page, post_result, post_view, subreddit_feed_item, user_controls, user_profile, wiki_path, wiki_view, ActivityItem, FeedTemplate,
+		GalleryTemplate, MoreCommentsTemplate, PostContentTemplate, PostTemplate, SubredditTemplate, UserTemplate, WikiTemplate,
 	},
 	ImageDisplay,
 };
 
 const PAGE_SIZE: u8 = 25;
-
-struct PostMedia {
-	video: MediaProxy,
-	image_display: ImageDisplay,
-}
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct FeedQuery {
@@ -74,11 +68,6 @@ pub struct MoreCommentsQuery {
 	cursor: String,
 	link_id: String,
 	sort: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct VideoPlayerQuery {
-	id: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -320,21 +309,11 @@ async fn wiki_response(
 pub async fn post_comments(
 	State(service): State<RedditService>,
 	State(signer): State<MediaSigner>,
-	State(media): State<MediaProxy>,
 	State(image_display): State<ImageDisplay>,
 	Path(path): Path<PostPath>,
 	Query(query): Query<PostQuery>,
 ) -> Result<PostTemplate, AppError> {
-	post_page(
-		service,
-		signer,
-		PostMedia { video: media, image_display },
-		path.subreddit,
-		path.article,
-		path.comment,
-		query,
-	)
-	.await
+	post_page(service, signer, image_display, path.subreddit, path.article, path.comment, query).await
 }
 
 pub async fn more_comments(
@@ -348,20 +327,6 @@ pub async fn more_comments(
 	let listing = service.graphql_more_comments(article, &query.cursor, sort).await?;
 	Ok(MoreCommentsTemplate {
 		comment_tree: comment_tree(&listing.data.children, &query.link_id, sort_name, markdown::Renderer::new(&signer, image_display)),
-	})
-}
-
-pub async fn video_player(
-	State(service): State<RedditService>,
-	State(media): State<MediaProxy>,
-	Query(query): Query<VideoPlayerQuery>,
-) -> Result<VideoPlayerTemplate, AppError> {
-	let post = post_by_id(&service, &query.id).await?;
-	if !is_external_video(&post) {
-		return Err(AppError::NotExternalVideo);
-	}
-	Ok(VideoPlayerTemplate {
-		playback: media.resolve_video(&post.url).await?,
 	})
 }
 
@@ -380,12 +345,11 @@ pub async fn gallery(
 pub async fn post_content(
 	State(service): State<RedditService>,
 	State(signer): State<MediaSigner>,
-	State(media): State<MediaProxy>,
 	State(image_display): State<ImageDisplay>,
 	Path(article): Path<String>,
 ) -> Result<PostContentTemplate, AppError> {
 	let post = post_by_id(&service, &article).await?;
-	let mut post = post_view(&post, &signer, media.video_allowed(&post.url), image_display);
+	let mut post = post_view(&post, &signer, image_display);
 	post.hide_content = false;
 	Ok(PostContentTemplate { post })
 }
@@ -405,13 +369,13 @@ async fn post_by_id(service: &RedditService, id: &str) -> Result<Post, AppError>
 async fn post_page(
 	service: RedditService,
 	signer: MediaSigner,
-	media: PostMedia,
+	image_display: ImageDisplay,
 	subreddit: Option<String>,
 	article: String,
 	comment: Option<String>,
 	query: PostQuery,
 ) -> Result<PostTemplate, AppError> {
-	let renderer = markdown::Renderer::new(&signer, media.image_display);
+	let renderer = markdown::Renderer::new(&signer, image_display);
 	let (sort, sort_name) = parse_comment_sort(query.sort.as_deref())?;
 	let comment_query = CommentQuery {
 		comment,
@@ -426,7 +390,7 @@ async fn post_page(
 	let link_id = post.name.clone();
 	let comment_tree = comment_tree(&comments.data.children, &link_id, sort_name, renderer);
 	let comment_count = post.num_comments;
-	let post = post_view(&post, &signer, media.video.video_allowed(&post.url), media.image_display);
+	let post = post_view(&post, &signer, image_display);
 
 	Ok(PostTemplate {
 		controls: comment_sort_controls(sort_name, &post.item.permalink),

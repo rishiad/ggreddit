@@ -10,8 +10,6 @@ use std::{
 use thiserror::Error;
 use url::{Host, Url};
 
-pub mod video;
-
 type HmacSha256 = Hmac<Sha256>;
 
 static ABSOLUTE_URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?i)(?:https?:)?//[^\s<>\"']+"#).unwrap());
@@ -167,7 +165,7 @@ impl MediaSigner {
 	pub fn media_url(&self, target: &Url) -> Result<String, MediaUrlError> {
 		self.validate_media_target(target)?;
 		let target = target.as_str();
-		let signature = self.sign(None, target);
+		let signature = self.sign(target);
 		let encoded = URL_SAFE_NO_PAD.encode(target);
 		Ok(format!("{MEDIA_ROUTE}/{signature}/{encoded}"))
 	}
@@ -181,7 +179,7 @@ impl MediaSigner {
 	}
 
 	pub fn decode_target(&self, signature: &str, encoded: &str) -> Result<Url, MediaUrlError> {
-		let target = self.decode_signed_target(None, signature, encoded)?;
+		let target = self.decode_signed_target(signature, encoded)?;
 		self.validate_media_target(&target)?;
 		Ok(target)
 	}
@@ -194,22 +192,11 @@ impl MediaSigner {
 		validate_media_target_with(target, &self.domains)
 	}
 
-	pub(crate) fn scoped_url(&self, route: &str, scope: &str, target: &Url) -> String {
-		let target = target.as_str();
-		let signature = self.sign(Some(scope), target);
-		let encoded = URL_SAFE_NO_PAD.encode(target);
-		format!("{route}/{signature}/{encoded}")
-	}
-
-	pub(crate) fn decode_scoped_target(&self, scope: &str, signature: &str, encoded: &str) -> Result<Url, MediaUrlError> {
-		self.decode_signed_target(Some(scope), signature, encoded)
-	}
-
-	fn decode_signed_target(&self, scope: Option<&str>, signature: &str, encoded: &str) -> Result<Url, MediaUrlError> {
+	fn decode_signed_target(&self, signature: &str, encoded: &str) -> Result<Url, MediaUrlError> {
 		let bytes = URL_SAFE_NO_PAD.decode(encoded).map_err(|_| MediaUrlError::InvalidEncoding)?;
 		let target = std::str::from_utf8(&bytes).map_err(|_| MediaUrlError::InvalidEncoding)?;
 		let supplied = URL_SAFE_NO_PAD.decode(signature).map_err(|_| MediaUrlError::InvalidSignature)?;
-		let verifier = self.authenticator(scope, target);
+		let verifier = self.authenticator(target);
 		verifier.verify_slice(&supplied).map_err(|_| MediaUrlError::InvalidSignature)?;
 		Url::parse(target).map_err(|_| MediaUrlError::InvalidTarget)
 	}
@@ -270,18 +257,14 @@ impl MediaSigner {
 		self.media_url(&target)
 	}
 
-	fn sign(&self, scope: Option<&str>, target: &str) -> String {
-		URL_SAFE_NO_PAD.encode(self.authenticator(scope, target).finalize().into_bytes())
+	fn sign(&self, target: &str) -> String {
+		URL_SAFE_NO_PAD.encode(self.authenticator(target).finalize().into_bytes())
 	}
 
-	fn authenticator(&self, scope: Option<&str>, target: &str) -> HmacSha256 {
+	fn authenticator(&self, target: &str) -> HmacSha256 {
 		let mut signer = HmacSha256::new_from_slice(&self.key).expect("HMAC accepts keys of any size");
 		signer.update(self.policy_scope.as_bytes());
 		signer.update(&[0]);
-		if let Some(scope) = scope {
-			signer.update(scope.as_bytes());
-			signer.update(&[0]);
-		}
 		signer.update(target.as_bytes());
 		signer
 	}

@@ -6,7 +6,7 @@ use clap::Parser;
 use neddit::config::{Config, LogFormat, LoggingConfig};
 use neddit_api::{
 	client::RedditClient,
-	media::{video::VideoResolver, MediaSigner},
+	media::MediaSigner,
 	server,
 	server::MediaProxy,
 	service::{ContentPolicy, RedditService},
@@ -41,7 +41,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		web = config.server.web,
 		api = config.server.api,
 		allow_nsfw = config.server.allow_nsfw,
-		video_enabled = config.video.enabled,
 		"starting neddit"
 	);
 	let listener = server::bind(&config.server.listen).await?;
@@ -62,9 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let cache = Cache::open(&config.cache).await?;
 	let reddit = RedditClient::new().await?.with_cache(cache.clone());
 	let service = RedditService::with_content_policy(reddit.clone(), ContentPolicy::new(config.server.allow_nsfw));
-	let video_exclusions = config.video_exclusions()?;
-	let video = config.video.enabled.then(|| VideoResolver::new(&config.video.executable, video_exclusions));
-	let media = MediaProxy::new(reddit.clone(), signer, video);
+	let media = MediaProxy::new(reddit.clone(), signer);
 	let app = neddit::router(service, &media, config.media.image_display, config.server.web, config.server.api);
 
 	info!(event = "service.ready", %address, version = env!("CARGO_PKG_VERSION"), "neddit is ready");

@@ -40,7 +40,6 @@ pub enum ImageDisplay {
 struct WebState {
 	service: RedditService,
 	signer: MediaSigner,
-	media: MediaProxy,
 	image_display: ImageDisplay,
 }
 
@@ -56,12 +55,6 @@ impl FromRef<WebState> for MediaSigner {
 	}
 }
 
-impl FromRef<WebState> for MediaProxy {
-	fn from_ref(state: &WebState) -> Self {
-		state.media.clone()
-	}
-}
-
 impl FromRef<WebState> for ImageDisplay {
 	fn from_ref(state: &WebState) -> Self {
 		state.image_display
@@ -69,14 +62,12 @@ impl FromRef<WebState> for ImageDisplay {
 }
 
 pub fn router(service: RedditService, media: MediaProxy, image_display: ImageDisplay) -> Router {
-	let video_enabled = media.video_enabled();
 	let state = WebState {
 		service,
 		signer: media.signer().clone(),
-		media: media.clone(),
 		image_display,
 	};
-	let mut app = Router::new()
+	let app = Router::new()
 		.route("/", get(app::front_page))
 		.route("/more-comments", get(app::more_comments))
 		.route("/gallery/{article}/{index}", get(app::gallery))
@@ -96,9 +87,6 @@ pub fn router(service: RedditService, media: MediaProxy, image_display: ImageDis
 		.route("/r/{subreddit}/comments/{article}/{slug}", get(app::post_comments))
 		.route("/r/{subreddit}/comments/{article}/{slug}/", get(app::post_comments))
 		.route("/r/{subreddit}/comments/{article}/{slug}/{comment}", get(app::post_comments));
-	if video_enabled {
-		app = app.route("/media/video/player", get(app::video_player));
-	}
 	let app = app
 		.with_state(state)
 		.merge(system_routes())

@@ -233,86 +233,11 @@ a:focus-visible {
   background: #111;
 }
 
-.video-poster,
 .video-player {
   display: block;
   width: 100%;
   max-height: min(36rem, 75dvh);
   object-fit: contain;
-}
-
-.video-poster-link {
-  display: grid;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  place-items: center;
-  color: #fff;
-}
-
-.video-placeholder {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: rgb(255 255 255 / 8%);
-}
-
-.play-video {
-  position: absolute;
-  display: grid;
-  width: 4rem;
-  height: 4rem;
-  padding: 0;
-  border: 2px solid #fff;
-  border-radius: 50%;
-  background: rgb(0 0 0 / 72%);
-  color: #fff;
-  cursor: pointer;
-  font: bold 1.5rem/1 sans-serif;
-  place-items: center;
-}
-
-.play-video-icon {
-  width: 1.75rem;
-  height: 1.75rem;
-  margin-left: 0.15rem;
-}
-
-.video-spinner {
-  display: none;
-  width: 1.6rem;
-  height: 1.6rem;
-  border: 3px solid rgb(255 255 255 / 35%);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: video-spin 0.8s linear infinite;
-}
-
-.play-video.htmx-request .play-video-icon {
-  display: none;
-}
-
-.play-video.htmx-request .video-spinner {
-  display: block;
-  opacity: 1;
-}
-
-@keyframes video-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.play-video:hover {
-  background: rgb(0 0 0 / 88%);
-}
-
-.play-video:disabled {
-  cursor: wait;
-  opacity: 0.65;
-}
-
-.play-video:focus-visible {
-  outline: 3px solid #fff;
-  outline-offset: 2px;
 }
 
 .pagination {

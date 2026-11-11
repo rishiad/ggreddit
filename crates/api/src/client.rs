@@ -5,15 +5,9 @@ mod oauth;
 use axum::{body::Body, http::HeaderMap, response::Response};
 use percent_encoding::{percent_encode, CONTROLS};
 use serde_json::Value;
-use std::{
-	io,
-	net::{IpAddr, Ipv4Addr},
-	result::Result,
-	time::Duration,
-};
+use std::{result::Result, time::Duration};
 use tracing::{debug, trace, warn};
 use url::form_urlencoded;
-use wreq::dns::{Addrs, Name, Resolve, Resolving};
 use wreq::redirect::Policy;
 use wreq::{header as wreq_header, Client as WreqClient, EmulationFactory, Method, Response as WreqResponse};
 use wreq_util::{Emulation, EmulationOS, EmulationOption};
@@ -27,7 +21,6 @@ const REDDIT_URL_BASE_HOST: &str = "oauth.reddit.com";
 const REDDIT_GRAPHQL_URL: &str = "https://gql-fed.reddit.com/";
 const POST_COMMENTS_HASH: &str = "314f29c2494fd78c7844ef2c6b09acb4bef5b37ab50b4ddc01691d6d5c8433f8";
 const MAX_UPSTREAM_BYTES: usize = 8 * 1024 * 1024;
-const EXTERNAL_RANGE_CHUNK: u64 = 8 * 1024 * 1024;
 const MAX_REDDIT_REDIRECTS: usize = 4;
 
 const ALTERNATIVE_REDDIT_URL_BASE: &str = "https://www.reddit.com";
@@ -35,7 +28,6 @@ const ALTERNATIVE_REDDIT_URL_BASE: &str = "https://www.reddit.com";
 #[derive(Clone)]
 pub struct RedditClient {
 	http: WreqClient,
-	external_http: WreqClient,
 	oauth: OAuthHandle,
 	cache: Option<crate::storage::Cache>,
 }
@@ -46,33 +38,11 @@ struct UpstreamResponse {
 	rate_limit_reset: Option<String>,
 }
 
-#[derive(Clone, Copy)]
-struct PublicDns;
-
-impl Resolve for PublicDns {
-	fn resolve(&self, name: Name) -> Resolving {
-		let host = name.as_str().to_owned();
-		Box::pin(async move {
-			let addresses = tokio::net::lookup_host((host.as_str(), 0)).await?.collect::<Vec<_>>();
-			if addresses.is_empty() || addresses.iter().any(|address| !crate::is_proxyable_ip(address.ip())) {
-				return Err(io::Error::other("DNS name resolved outside the public internet").into());
-			}
-			Ok(Box::new(addresses.into_iter()) as Addrs)
-		})
-	}
-}
-
 impl RedditClient {
 	pub async fn new() -> Result<Self, ClientError> {
 		let http = Self::build_http_client()?;
-		let external_http = Self::build_external_http_client()?;
 		let oauth = OAuthHandle::start(http.clone()).await?;
-		Ok(Self {
-			http,
-			external_http,
-			oauth,
-			cache: None,
-		})
+		Ok(Self { http, oauth, cache: None })
 	}
 
 	pub fn with_cache(mut self, cache: crate::storage::Cache) -> Self {
@@ -86,14 +56,6 @@ impl RedditClient {
 
 	/// Build the HTTP client used for Reddit and media requests.
 	fn build_http_client() -> Result<WreqClient, ClientError> {
-		Self::build_http_client_with(false)
-	}
-
-	fn build_external_http_client() -> Result<WreqClient, ClientError> {
-		Self::build_http_client_with(true)
-	}
-
-	fn build_http_client_with(public_dns: bool) -> Result<WreqClient, ClientError> {
 		// Keeping this list short to aid in privacy.
 		// The more emulations, the more unique a fingerprint each instance has.
 		// But some emulations should increase evasiveness.
@@ -108,40 +70,16 @@ impl RedditClient {
 			.emulation();
 
 		debug!(?emulation, "HTTP client initialized");
-		let mut builder = WreqClient::builder().emulation(emulation).redirect(Policy::none());
-		if public_dns {
-			builder = builder.dns_resolver(PublicDns);
-		}
-		builder.build().map_err(ClientError::BuildClient)
+		WreqClient::builder()
+			.emulation(emulation)
+			.redirect(Policy::none())
+			.build()
+			.map_err(ClientError::BuildClient)
 	}
 
 	pub async fn proxy(&self, url: String, request_headers: &HeaderMap) -> Result<Response, ClientError> {
 		let credentials = self.oauth.current();
 		self.proxy_with(&self.http, url, request_headers, Some(credentials.user_agent())).await
-	}
-
-	pub async fn proxy_external(&self, url: String, request_headers: &HeaderMap, user_agent: Option<&str>) -> Result<Response, ClientError> {
-		let uri = wreq::Uri::try_from(&url).map_err(|_| ClientError::InvalidProxyUrl { url: url.clone() })?;
-		let mut builder = self.external_http.get(uri).local_address(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
-		for &key in &["Range", "If-Modified-Since", "Cache-Control"] {
-			if let Some(value) = request_headers.get(key) {
-				let value = if key == "Range" {
-					bounded_range(value.to_str().ok()).unwrap_or_else(|| value.as_bytes().to_vec())
-				} else {
-					value.as_bytes().to_vec()
-				};
-				builder = builder.header(key, value);
-			}
-		}
-		if let Some(user_agent) = user_agent {
-			builder = builder.header("User-Agent", user_agent);
-		}
-		let response = builder
-			.header(wreq_header::ACCEPT, "*/*")
-			.send()
-			.await
-			.map_err(|source| ClientError::Request { url, source })?;
-		response.into_http_response()
 	}
 
 	async fn proxy_with(&self, client: &WreqClient, url: String, request_headers: &HeaderMap, user_agent: Option<&str>) -> Result<Response, ClientError> {
@@ -427,17 +365,6 @@ fn cache_ttl(path: &str) -> i64 {
 	} else {
 		30
 	}
-}
-
-fn bounded_range(value: Option<&str>) -> Option<Vec<u8>> {
-	let value = value?.strip_prefix("bytes=")?;
-	let start = value.strip_suffix('-')?;
-	if start.is_empty() || start.contains(',') {
-		return None;
-	}
-	let start: u64 = start.parse().ok()?;
-	let end = start.saturating_add(EXTERNAL_RANGE_CHUNK - 1);
-	Some(format!("bytes={start}-{end}").into_bytes())
 }
 
 fn parse_rate_limit_remaining(value: &str) -> Option<u16> {

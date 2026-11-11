@@ -1,9 +1,0 @@
-<div class="hosted-video">
-  <div class="video-stage">
-    <video class="video-player" controls autoplay playsinline preload="metadata">
-      {% for source in playback.sources %}
-        <source src="{{ source.url }}" type="{{ source.mime }}">
-      {% endfor %}
-    </video>
-  </div>
-</div>

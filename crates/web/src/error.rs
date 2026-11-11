@@ -5,7 +5,6 @@ use axum::{
 	middleware::Next,
 	response::{Html, IntoResponse, Response},
 };
-use neddit_api::media::video::VideoError;
 use neddit_api::service::ServiceError;
 use thiserror::Error;
 
@@ -43,10 +42,6 @@ pub enum AppError {
 	InvalidCommentSort,
 	#[error("post not found")]
 	PostNotFound,
-	#[error("post is not marked as external video")]
-	NotExternalVideo,
-	#[error(transparent)]
-	Video(#[from] VideoError),
 	#[error("failed to load Reddit data")]
 	Service(#[from] ServiceError),
 }
@@ -57,10 +52,9 @@ impl IntoResponse for AppError {
 			return response_with_description(StatusCode::FORBIDDEN, "This server has NSFW disabled.");
 		}
 		let status = match self {
-			Self::InvalidSort | Self::InvalidFeedTime | Self::InvalidCommentSort | Self::NotExternalVideo => StatusCode::BAD_REQUEST,
+			Self::InvalidSort | Self::InvalidFeedTime | Self::InvalidCommentSort => StatusCode::BAD_REQUEST,
 			Self::PostNotFound => StatusCode::NOT_FOUND,
 			Self::Service(_) => StatusCode::BAD_GATEWAY,
-			Self::Video(error) => return error.into_response(),
 		};
 		response(status)
 	}
