@@ -20,7 +20,7 @@ impl RedditService {
 
 	pub(super) async fn graphql_comments(&self, article: &str, query: &CommentQuery) -> Result<PostComments, ServiceError> {
 		validate_id36("article", article)?;
-		let json = self.client.json(format!("/by_id/t3_{article}")).await?;
+		let json = self.client.read_posts(&format!("t3_{article}")).await?;
 		let mut posts = parse_post_listing(&json)?;
 		if posts.data.children.is_empty() {
 			return Err(ServiceError::PostNotFound);

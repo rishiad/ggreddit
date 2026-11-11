@@ -2,7 +2,6 @@ use super::{error::ClientError, RedditClient};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::DateTime;
 use serde_json::{json, Value};
-use url::form_urlencoded;
 
 const FEED: &str = "97046e2a48050f10a507db354a8da60955ffccb586dcf63163bdfc6610d5cf7a";
 const POPULAR: &str = "728c0f9a4d12c17b8cffe07669bb1a8770b0f2ec0c84e040485f8fad2d9c417f";
@@ -15,46 +14,6 @@ const USER_POSTS: &str = "78a213c02a340db4a707d4bcd375ce34f733b75893379603acb4ec
 const USER_COMMENTS: &str = "e1b37f521fb40af2120946b70e7fbf6a3d924db2abaf28ff2164d4cfacca28db";
 const COMMENTS_BY_IDS: &str = "51ab9f2e0eb87b6dac9aac02012ba7046049e516ec55ec442abfed0f19c6f311";
 const WIKI: &str = "32f9314683f033a76812f772bbba771958760286c5cd28c558071a3ff4eb231f";
-
-// Only these paths have persisted GraphQL operations.
-pub(super) async fn route(client: &RedditClient, path: &str) -> Option<Result<Value, ClientError>> {
-	let (route, query) = path.split_once('?').unwrap_or((path, ""));
-	let params: Vec<_> = form_urlencoded::parse(query.as_bytes()).collect();
-	let get = |name: &str| params.iter().find(|(key, _)| key == name).map(|(_, value)| value.as_ref());
-	if let Some(ids) = route.strip_prefix("/by_id/") {
-		return Some(by_ids(client, ids.split(',').map(str::to_owned).collect()).await);
-	}
-	let pieces: Vec<_> = route.trim_matches('/').split('/').collect();
-	if let ["user", name, "about"] = pieces.as_slice() {
-		return Some(user(client, name).await);
-	}
-	if let ["user", name, kind @ ("submitted" | "comments")] = pieces.as_slice() {
-		return Some(user_activity(client, name, kind, get("sort"), get("t"), get("after"), get("limit")).await);
-	}
-	if let ["r", name, "wiki", "pages"] = pieces.as_slice() {
-		return Some(wiki(client, name, None).await);
-	}
-	if let ["r", name, "wiki", page @ ..] = pieces.as_slice() {
-		if !page.is_empty() {
-			if get("v").is_some() || get("v2").is_some() {
-				return Some(Err(missing()));
-			}
-			return Some(wiki(client, name, Some(&page.join("/"))).await);
-		}
-	}
-	if let ["r", name, "about"] = pieces.as_slice() {
-		return Some(community(client, name).await);
-	}
-	let (name, sort) = match pieces.as_slice() {
-		["r", name, sort] => (*name, *sort),
-		[sort] if matches!(*sort, "hot" | "best" | "new" | "rising" | "top" | "controversial") => ("all", *sort),
-		_ => return None,
-	};
-	if !matches!(sort, "hot" | "best" | "new" | "rising" | "top" | "controversial") {
-		return None;
-	}
-	Some(feed(client, name, sort, get("t"), get("after"), get("limit")).await)
-}
 
 fn missing() -> ClientError {
 	ClientError::InvalidEnvelope
@@ -81,19 +40,18 @@ fn edges(value: &Value) -> Result<(Vec<Value>, Option<String>), ClientError> {
 	Ok((posts, cursor(&value["pageInfo"]["endCursor"])))
 }
 
-async fn feed(client: &RedditClient, name: &str, sort: &str, range: Option<&str>, after: Option<&str>, limit: Option<&str>) -> Result<Value, ClientError> {
-	let mut variables = json!({"sort":sort.to_ascii_uppercase(),"pageSize":limit.and_then(|n| n.parse::<u8>().ok()).unwrap_or(25)});
+pub(super) async fn feed(client: &RedditClient, name: &str, sort: &str, range: Option<&str>, after: Option<&str>, limit: Option<u8>) -> Result<Value, ClientError> {
+	let mut variables = json!({"sort":sort.to_ascii_uppercase(),"pageSize":limit.unwrap_or(25)});
 	if let Some(range) = range {
 		variables["range"] = range.to_ascii_uppercase().into();
 	}
 	if let Some(after) = after {
 		variables["after"] = if after.starts_with("t3_") { STANDARD.encode(after).into() } else { after.into() };
 	}
-	let name = name.replace("%2B", "+").replace("%2b", "+");
 	if name.contains('+') {
 		return Err(missing());
 	}
-	let (operation, hash, root) = match name.as_str() {
+	let (operation, hash, root) = match name {
 		"all" => ("AllFeedSdui", ALL, "/data/allV3/elements"),
 		"popular" => ("PopularFeedElements", POPULAR, "/data/popular/elements"),
 		_ => {
@@ -129,7 +87,7 @@ async fn feed(client: &RedditClient, name: &str, sort: &str, range: Option<&str>
 				}
 			}
 			after = cursor(&elements["pageInfo"]["endCursor"]);
-			if ids.len() >= limit.and_then(|n| n.parse::<usize>().ok()).unwrap_or(25) || after.is_none() {
+			if ids.len() >= limit.map(usize::from).unwrap_or(25) || after.is_none() {
 				break;
 			}
 			variables["after"] = if after.as_deref().is_some_and(|value| value.starts_with("t3_")) {
@@ -140,7 +98,7 @@ async fn feed(client: &RedditClient, name: &str, sort: &str, range: Option<&str>
 		}
 		let result = by_ids(client, ids).await?;
 		let mut posts = result["data"]["children"].as_array().cloned().ok_or_else(missing)?;
-		let requested = limit.and_then(|n| n.parse::<usize>().ok()).unwrap_or(25);
+		let requested = limit.map(usize::from).unwrap_or(25);
 		if posts.len() > requested {
 			posts.truncate(requested);
 			after = posts.last().and_then(|post| post["data"]["name"].as_str()).map(str::to_owned);
@@ -167,7 +125,7 @@ async fn feed(client: &RedditClient, name: &str, sort: &str, range: Option<&str>
 	Ok(listing(posts, after))
 }
 
-async fn by_ids(client: &RedditClient, ids: Vec<String>) -> Result<Value, ClientError> {
+pub(super) async fn by_ids(client: &RedditClient, ids: Vec<String>) -> Result<Value, ClientError> {
 	if ids.is_empty() {
 		return Ok(listing(vec![], None));
 	}
@@ -187,7 +145,7 @@ async fn by_ids(client: &RedditClient, ids: Vec<String>) -> Result<Value, Client
 	Ok(listing(posts, None))
 }
 
-async fn community(client: &RedditClient, name: &str) -> Result<Value, ClientError> {
+pub(super) async fn community(client: &RedditClient, name: &str) -> Result<Value, ClientError> {
 	let response = client
 		.graphql(
 			"SubredditInfoByName",
@@ -202,7 +160,7 @@ async fn community(client: &RedditClient, name: &str) -> Result<Value, ClientErr
 	subreddit(node)
 }
 
-async fn user(client: &RedditClient, name: &str) -> Result<Value, ClientError> {
+pub(super) async fn user(client: &RedditClient, name: &str) -> Result<Value, ClientError> {
 	let response = client
 		.graphql("UserProfile", USER_PROFILE, json!({"name":name,"includePremiumAvatarTreatment":false}))
 		.await?;
@@ -247,16 +205,16 @@ fn count(value: &Value) -> Option<u64> {
 	whole_number(value).and_then(|number| u64::try_from(number).ok())
 }
 
-async fn user_activity(
+pub(super) async fn user_activity(
 	client: &RedditClient,
 	name: &str,
 	kind: &str,
-	sort: Option<&str>,
+	sort: &str,
 	range: Option<&str>,
 	after: Option<&str>,
-	limit: Option<&str>,
+	limit: Option<u8>,
 ) -> Result<Value, ClientError> {
-	let mut vars = json!({"sort":sort.unwrap_or("new").to_ascii_uppercase(),"pageSize":limit.and_then(|n|n.parse::<u8>().ok()).unwrap_or(25)});
+	let mut vars = json!({"sort":sort.to_ascii_uppercase(),"pageSize":limit.unwrap_or(25)});
 	if let Some(range) = range {
 		vars["range"] = range.to_ascii_uppercase().into();
 	}
@@ -320,10 +278,9 @@ async fn user_activity(
 	Ok(listing(items, cursor(&comments["pageInfo"]["endCursor"])))
 }
 
-async fn wiki(client: &RedditClient, subreddit: &str, page: Option<&str>) -> Result<Value, ClientError> {
+pub(super) async fn wiki(client: &RedditClient, subreddit: &str, page: Option<&str>) -> Result<Value, ClientError> {
 	let name = page.unwrap_or("index");
-	let decoded = percent_encoding::percent_decode_str(name).decode_utf8().map_err(|_| missing())?;
-	if decoded.is_empty() || decoded.split('/').any(|part| part.is_empty() || matches!(part, "." | "..")) {
+	if name.is_empty() || name.split('/').any(|part| part.is_empty() || matches!(part, "." | "..")) {
 		return Err(missing());
 	}
 	let response = client
@@ -331,7 +288,7 @@ async fn wiki(client: &RedditClient, subreddit: &str, page: Option<&str>) -> Res
 			"SubredditWiki",
 			WIKI,
 			json!({
-				"subredditName":subreddit,"pageName":decoded,"includePage":true,"includePageContent":true,
+				"subredditName":subreddit,"pageName":name,"includePage":true,"includePageContent":true,
 				"includeMediaFragment":true,"includeIsRevisable":false,"includeRevisionsCount":false,"includePageTitle":true
 			}),
 		)
@@ -355,7 +312,7 @@ async fn wiki(client: &RedditClient, subreddit: &str, page: Option<&str>) -> Res
 	if node["status"].as_str().is_some_and(|status| status != "VALID") {
 		return Err(ClientError::NotFound);
 	}
-	if node["status"] != "VALID" || node["name"].as_str() != Some(decoded.as_ref()) {
+	if node["status"] != "VALID" || node["name"].as_str() != Some(name) {
 		return Err(missing());
 	}
 	let content = node["content"]["richtext"].as_str().ok_or_else(missing)?;

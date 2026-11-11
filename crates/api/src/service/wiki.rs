@@ -2,13 +2,12 @@ use crate::models::{WikiPage, WikiPageListing};
 use crate::parsing::{parse_wiki_page, parse_wiki_page_listing};
 use crate::service::reddit::{invalid_parameter, validate_subreddit};
 use crate::service::{RedditService, ServiceError};
-use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 
 impl RedditService {
 	pub async fn wiki_pages(&self, subreddit: &str) -> Result<WikiPageListing, ServiceError> {
 		validate_subreddit(subreddit)?;
 		self.require_safe_subreddit(subreddit).await?;
-		let json = self.client.json(format!("/r/{subreddit}/wiki/pages")).await?;
+		let json = self.client.read_wiki(subreddit, None).await?;
 		Ok(parse_wiki_page_listing(&json)?)
 	}
 
@@ -18,25 +17,18 @@ impl RedditService {
 		if query.v.is_some() || query.v2.is_some() {
 			return Err(ServiceError::BadRequest);
 		}
-		let page = encode_wiki_page(page)?;
-		let path = format!("/r/{subreddit}/wiki/{page}");
-		let json = self.client.json(path).await?;
+		validate_wiki_page(page)?;
+		let json = self.client.read_wiki(subreddit, Some(page)).await?;
 		Ok(parse_wiki_page(&json)?)
 	}
 }
 
-fn encode_wiki_page(page: &str) -> Result<String, ServiceError> {
+fn validate_wiki_page(page: &str) -> Result<(), ServiceError> {
 	let valid = !page.is_empty() && page.split('/').all(|segment| !segment.is_empty() && !matches!(segment, "." | ".."));
 	if !valid {
 		return Err(invalid_parameter("page", page));
 	}
-	Ok(
-		page
-			.split('/')
-			.map(|segment| utf8_percent_encode(segment, NON_ALPHANUMERIC).to_string())
-			.collect::<Vec<_>>()
-			.join("/"),
-	)
+	Ok(())
 }
 
 mod wiki_page_query {

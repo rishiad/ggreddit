@@ -289,7 +289,7 @@ impl IntoResponse for ProxyError {
 			Self::UpstreamUnavailable | Self::Client(ClientError::Unauthorized | ClientError::RateLimited { .. } | ClientError::Auth(_)) => StatusCode::SERVICE_UNAVAILABLE,
 			Self::InvalidEtag
 			| Self::MediaUrl(MediaUrlError::ShortSecret | MediaUrlError::InvalidDomainPattern(_))
-			| Self::Client(ClientError::BuildClient(_) | ClientError::ResponseBuild(_) | ClientError::UnsupportedPath { .. }) => StatusCode::INTERNAL_SERVER_ERROR,
+			| Self::Client(ClientError::BuildClient(_) | ClientError::ResponseBuild(_)) => StatusCode::INTERNAL_SERVER_ERROR,
 			_ => StatusCode::BAD_GATEWAY,
 		};
 		(status, self.to_string()).into_response()

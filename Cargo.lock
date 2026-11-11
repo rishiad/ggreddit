@@ -1155,7 +1155,6 @@ dependencies = [
  "fastrand",
  "getrandom",
  "hmac",
- "percent-encoding",
  "pulldown-cmark",
  "regex",
  "rusqlite",

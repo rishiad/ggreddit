@@ -6,7 +6,6 @@ use axum::{body::Body, http::HeaderMap, response::Response};
 use serde_json::Value;
 use std::{result::Result, time::Duration};
 use tracing::{debug, trace, warn};
-use url::form_urlencoded;
 use wreq::redirect::Policy;
 use wreq::{header as wreq_header, Client as WreqClient, EmulationFactory, Response as WreqResponse};
 use wreq_util::{Emulation, EmulationOS, EmulationOption};
@@ -93,16 +92,72 @@ impl RedditClient {
 		response.into_http_response()
 	}
 
-	/// Dispatch a supported read through Reddit's persisted GraphQL queries.
-	pub async fn json(&self, path: String) -> Result<Value, ClientError> {
-		let Some(cache) = &self.cache else {
-			return self.fetch_json(path).await;
-		};
-		let key = cache_key(&path);
-		let ttl = cache_ttl(&path);
-		tokio::time::timeout(Duration::from_secs(20), cache.json(key, ttl, self.fetch_json(path)))
+	async fn read(&self, key: Value, ttl: i64, fetch: impl std::future::Future<Output = Result<Value, ClientError>>) -> Result<Value, ClientError> {
+		let operation = key[0].as_str().unwrap_or("read").to_owned();
+		let key = format!("reddit-graphql-read-v2:{}", crate::storage::fingerprint(key.to_string().as_bytes()));
+		let result = tokio::time::timeout(Duration::from_secs(20), async {
+			if let Some(cache) = &self.cache {
+				cache.json(key, ttl, fetch).await
+			} else {
+				fetch.await
+			}
+		})
+		.await
+		.map_err(|_| ClientError::Timeout)?;
+		if let Err(error) = &result {
+			warn!(event = "upstream.graphql_failed", %operation, %error, "Reddit GraphQL request failed");
+		}
+		result
+	}
+
+	pub(crate) async fn read_feed(&self, name: &str, sort: &str, range: Option<&str>, after: Option<&str>, limit: Option<u8>) -> Result<Value, ClientError> {
+		self
+			.read(
+				serde_json::json!(["feed", name, sort, range, after, limit]),
+				30,
+				graphql::feed(self, name, sort, range, after, limit),
+			)
 			.await
-			.map_err(|_| ClientError::Timeout)?
+	}
+
+	pub(crate) async fn read_posts(&self, names: &str) -> Result<Value, ClientError> {
+		self
+			.read(
+				serde_json::json!(["posts", names]),
+				60,
+				graphql::by_ids(self, names.split(',').map(str::to_owned).collect()),
+			)
+			.await
+	}
+
+	pub(crate) async fn read_community(&self, name: &str) -> Result<Value, ClientError> {
+		self.read(serde_json::json!(["community", name]), 120, graphql::community(self, name)).await
+	}
+
+	pub(crate) async fn read_user(&self, name: &str) -> Result<Value, ClientError> {
+		self.read(serde_json::json!(["user", name]), 120, graphql::user(self, name)).await
+	}
+
+	pub(crate) async fn read_user_activity(
+		&self,
+		name: &str,
+		kind: &str,
+		sort: &str,
+		range: Option<&str>,
+		after: Option<&str>,
+		limit: Option<u8>,
+	) -> Result<Value, ClientError> {
+		self
+			.read(
+				serde_json::json!(["activity", name, kind, sort, range, after, limit]),
+				30,
+				graphql::user_activity(self, name, kind, sort, range, after, limit),
+			)
+			.await
+	}
+
+	pub(crate) async fn read_wiki(&self, subreddit: &str, page: Option<&str>) -> Result<Value, ClientError> {
+		self.read(serde_json::json!(["wiki", subreddit, page]), 600, graphql::wiki(self, subreddit, page)).await
 	}
 
 	/// Fetch the Android app's persisted post-comment query with the current mobile token.
@@ -179,16 +234,6 @@ impl RedditClient {
 		Ok(json)
 	}
 
-	async fn fetch_json(&self, path: String) -> Result<Value, ClientError> {
-		if let Some(result) = graphql::route(self, &path).await {
-			if let Err(error) = &result {
-				warn!(event = "upstream.graphql_failed", %path, %error, "Reddit GraphQL request failed");
-			}
-			return result;
-		}
-		Err(ClientError::UnsupportedPath { path })
-	}
-
 	async fn observe_rate_limit_headers(&self, generation: u64, response: &WreqResponse) -> Option<String> {
 		let remaining = response.headers().get("x-ratelimit-remaining")?.to_str().ok()?;
 		let reset = response.headers().get("x-ratelimit-reset")?.to_str().ok()?;
@@ -212,28 +257,6 @@ impl RedditClient {
 		}
 
 		Some(reset.to_string())
-	}
-}
-
-pub(crate) fn cache_key(path: &str) -> String {
-	let (path, query) = path.split_once('?').unwrap_or((path, ""));
-	let mut pairs: Vec<_> = form_urlencoded::parse(query.as_bytes()).collect();
-	// Stable key sort preserves the order of duplicate parameters.
-	pairs.sort_by(|a, b| a.0.cmp(&b.0));
-	let query = form_urlencoded::Serializer::new(String::new()).extend_pairs(pairs).finish();
-	format!("reddit-graphql-read-v1:{}", crate::storage::fingerprint(format!("{path}?{query}").as_bytes()))
-}
-
-fn cache_ttl(path: &str) -> i64 {
-	let path = path.split('?').next().unwrap_or(path);
-	if path.contains("/wiki/") {
-		600
-	} else if path.ends_with("/about") {
-		120
-	} else if path.contains("/comments/") || path.starts_with("/comments/") || path.starts_with("/by_id/") {
-		60
-	} else {
-		30
 	}
 }
 

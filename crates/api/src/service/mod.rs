@@ -2,7 +2,6 @@ mod content;
 mod error;
 mod graphql;
 mod public_read;
-mod query_codec;
 mod reddit;
 mod sanitize;
 mod wiki;

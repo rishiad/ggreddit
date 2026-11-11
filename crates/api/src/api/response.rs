@@ -29,10 +29,8 @@ impl ApiError {
 		}
 		match self.status() {
 			StatusCode::BAD_REQUEST => "Bad Request",
-			StatusCode::UNAUTHORIZED => "Unauthorized",
 			StatusCode::FORBIDDEN => "Forbidden",
 			StatusCode::NOT_FOUND => "Not Found",
-			StatusCode::TOO_MANY_REQUESTS => "Too Many Requests",
 			StatusCode::GATEWAY_TIMEOUT => "Gateway Timeout",
 			StatusCode::SERVICE_UNAVAILABLE => "Service Unavailable",
 			StatusCode::INTERNAL_SERVER_ERROR => "Internal Server Error",

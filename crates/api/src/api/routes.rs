@@ -1,4 +1,4 @@
-use crate::api::query::{ApiQuery, DefaultQuery};
+use crate::api::query::ApiQuery;
 use crate::api::response::respond;
 use crate::service::{CommentQuery, ListingQuery, PostSort, RedditService, UserHistoryQuery, WikiPageQuery};
 use axum::{
@@ -35,11 +35,6 @@ pub(super) fn router() -> Router<RedditService> {
 		.route("/r/{subreddit}/controversial", subreddit(PostSort::Controversial))
 		.route("/r/{subreddit}", subreddit(PostSort::Hot))
 		.route("/comments/{article}", get(post_comments))
-		.route("/r/{subreddit}/comments/{article}", get(subreddit_post_comments))
-		.route("/comments/{article}/{slug}", get(post_permalink))
-		.route("/comments/{article}/{slug}/{comment}", get(post_comment_permalink))
-		.route("/r/{subreddit}/comments/{article}/{slug}", get(subreddit_post_permalink))
-		.route("/r/{subreddit}/comments/{article}/{slug}/{comment}", get(subreddit_post_comment_permalink))
 		.route("/r/{subreddit}/about", get(subreddit_about))
 		.route("/r/{subreddit}/wiki/pages", get(wiki_pages))
 		.route("/r/{subreddit}/wiki", get(wiki_index))
@@ -51,54 +46,7 @@ pub(super) fn router() -> Router<RedditService> {
 }
 
 async fn post_comments(State(service): State<RedditService>, Path(article): Path<String>, ApiQuery(query): ApiQuery<CommentQuery>) -> Response {
-	comments(service, None, article, None, query).await
-}
-
-async fn subreddit_post_comments(
-	State(service): State<RedditService>,
-	Path((subreddit, article)): Path<(String, String)>,
-	ApiQuery(query): ApiQuery<CommentQuery>,
-) -> Response {
-	comments(service, Some(subreddit), article, None, query).await
-}
-
-async fn post_permalink(State(service): State<RedditService>, Path((article, _slug)): Path<(String, String)>, ApiQuery(query): ApiQuery<CommentQuery>) -> Response {
-	comments(service, None, article, None, query).await
-}
-
-async fn post_comment_permalink(
-	State(service): State<RedditService>,
-	Path((article, _slug, comment)): Path<(String, String, String)>,
-	ApiQuery(query): ApiQuery<CommentQuery>,
-) -> Response {
-	comments(service, None, article, Some(comment), query).await
-}
-
-async fn subreddit_post_permalink(
-	State(service): State<RedditService>,
-	Path((subreddit, article, _slug)): Path<(String, String, String)>,
-	ApiQuery(query): ApiQuery<CommentQuery>,
-) -> Response {
-	comments(service, Some(subreddit), article, None, query).await
-}
-
-async fn subreddit_post_comment_permalink(
-	State(service): State<RedditService>,
-	Path((subreddit, article, _slug, comment)): Path<(String, String, String, String)>,
-	ApiQuery(query): ApiQuery<CommentQuery>,
-) -> Response {
-	comments(service, Some(subreddit), article, Some(comment), query).await
-}
-
-async fn comments(service: RedditService, subreddit: Option<String>, article: String, comment: Option<String>, mut query: CommentQuery) -> Response {
-	if let Some(comment) = comment {
-		query.comment = Some(comment);
-	}
-	let result = match subreddit {
-		Some(subreddit) => service.subreddit_post_comments(&subreddit, &article, &query).await,
-		None => service.post_comments(&article, &query).await,
-	};
-	respond(result)
+	respond(service.post_comments(&article, &query).await)
 }
 
 async fn subreddit_about(State(service): State<RedditService>, Path(subreddit): Path<String>) -> Response {
@@ -109,14 +57,14 @@ async fn wiki_pages(State(service): State<RedditService>, Path(subreddit): Path<
 	respond(service.wiki_pages(&subreddit).await)
 }
 
-async fn wiki_page(State(service): State<RedditService>, Path((subreddit, page)): Path<(String, String)>, DefaultQuery(query): DefaultQuery<WikiPageQuery>) -> Response {
+async fn wiki_page(State(service): State<RedditService>, Path((subreddit, page)): Path<(String, String)>, ApiQuery(query): ApiQuery<WikiPageQuery>) -> Response {
 	if page == "revisions" || page.starts_with("revisions/") || page == "discussions" || page.starts_with("discussions/") {
 		return StatusCode::NOT_FOUND.into_response();
 	}
 	respond(service.wiki_page(&subreddit, &page, &query).await)
 }
 
-async fn wiki_index(State(service): State<RedditService>, Path(subreddit): Path<String>, DefaultQuery(query): DefaultQuery<WikiPageQuery>) -> Response {
+async fn wiki_index(State(service): State<RedditService>, Path(subreddit): Path<String>, ApiQuery(query): ApiQuery<WikiPageQuery>) -> Response {
 	respond(service.wiki_page(&subreddit, "index", &query).await)
 }
 

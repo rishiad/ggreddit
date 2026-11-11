@@ -710,7 +710,7 @@ pub fn feed_pagination(base: &str, sort: &str, time: &str, history: &[String], c
 			(json.len() <= MAX_HISTORY_BYTES).then(|| listing_page_url(base, sort, time, Some(cursor), &next_history))
 		})
 		.unwrap_or_default();
-	pagination(history.len() as u32 + 1, previous_url, next_url)
+	pagination(u32::try_from(history.len()).unwrap_or(u32::MAX).saturating_add(1), previous_url, next_url)
 }
 
 fn listing_page_url(base: &str, sort: &str, time: &str, cursor: Option<&str>, history: &[String]) -> String {

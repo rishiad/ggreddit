@@ -41,7 +41,7 @@ impl ServiceError {
 			Self::Client(ClientError::Unauthorized | ClientError::RateLimited { .. } | ClientError::Auth(_) | ClientError::UnexpectedStatus { status: 429 | 503, .. }) => {
 				StatusCode::SERVICE_UNAVAILABLE
 			}
-			Self::Client(ClientError::UnsupportedPath { .. } | ClientError::BuildClient(_) | ClientError::ResponseBuild(_)) => StatusCode::INTERNAL_SERVER_ERROR,
+			Self::Client(ClientError::BuildClient(_) | ClientError::ResponseBuild(_)) => StatusCode::INTERNAL_SERVER_ERROR,
 			Self::Client(_) | Self::Parse(_) | Self::InvalidGraphqlComments => StatusCode::BAD_GATEWAY,
 		}
 	}

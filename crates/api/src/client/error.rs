@@ -10,8 +10,6 @@ pub enum ClientError {
 	UnexpectedStatus { path: String, status: u16 },
 	#[error("Reddit returned an unexpected HTTP status or JSON error envelope")]
 	InvalidEnvelope,
-	#[error("no GraphQL operation for `{path}`")]
-	UnsupportedPath { path: String },
 	#[error("Reddit did not find the requested resource")]
 	NotFound,
 	#[error("failed to build Reddit HTTP client")]

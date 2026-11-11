@@ -41,7 +41,7 @@ impl FeedQuery {
 		if history.first().is_some_and(|cursor| !cursor.is_empty())
 			|| history.iter().skip(1).any(String::is_empty)
 			|| self.after.as_deref().is_some_and(str::is_empty)
-			|| (self.after.is_some() != !history.is_empty())
+			|| (self.after.is_some() == history.is_empty())
 		{
 			return Err(AppError::InvalidPagination);
 		}
@@ -76,12 +76,6 @@ pub struct MoreCommentsQuery {
 	cursor: String,
 	link_id: String,
 	sort: Option<String>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-pub struct WikiQuery {
-	v: Option<String>,
-	v2: Option<String>,
 }
 
 pub async fn front_page(State(service): State<RedditService>, State(signer): State<MediaSigner>, Query(query): Query<FeedQuery>) -> Result<FeedTemplate, AppError> {
@@ -231,7 +225,7 @@ pub async fn wiki_root(
 	State(signer): State<MediaSigner>,
 	State(image_display): State<ImageDisplay>,
 	Path(subreddit): Path<String>,
-	Query(query): Query<WikiQuery>,
+	Query(query): Query<WikiPageQuery>,
 ) -> Result<Response, AppError> {
 	wiki_response(service, signer, image_display, subreddit, None, query).await
 }
@@ -241,7 +235,7 @@ pub async fn wiki_page(
 	State(signer): State<MediaSigner>,
 	State(image_display): State<ImageDisplay>,
 	Path((subreddit, page)): Path<(String, String)>,
-	Query(query): Query<WikiQuery>,
+	Query(query): Query<WikiPageQuery>,
 ) -> Result<Response, AppError> {
 	wiki_response(service, signer, image_display, subreddit, Some(page), query).await
 }
@@ -252,12 +246,11 @@ async fn wiki_response(
 	image_display: ImageDisplay,
 	subreddit: String,
 	requested_page: Option<String>,
-	query: WikiQuery,
+	query: WikiPageQuery,
 ) -> Result<Response, AppError> {
 	if query.v.is_some() || query.v2.is_some() {
 		return Err(ServiceError::BadRequest.into());
 	}
-	let query = WikiPageQuery { v: query.v, v2: query.v2 };
 	let (community, pages) = tokio::try_join!(service.subreddit_about(&subreddit), service.wiki_pages(&subreddit),)?;
 	let has_wiki = has_public_wiki_pages(&pages);
 	let community = community_view(&community.data, &signer, has_wiki);

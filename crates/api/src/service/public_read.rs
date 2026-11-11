@@ -1,17 +1,13 @@
 use crate::models::{Listing, Post, PublicThing, Thing};
 
 use crate::parsing::{parse_post_listing, parse_user_comment_listing};
-use crate::service::query_codec;
-use crate::service::reddit::{invalid_parameter, validate_listing_query_with, validate_username, with_query};
+use crate::service::reddit::{invalid_parameter, validate_listing_query_with, validate_username};
 use crate::service::sanitize::{clear_listing_modhash, clear_public_listing_modhash};
 use crate::service::{RedditService, ServiceError};
 
 impl RedditService {
 	pub async fn user_submitted(&self, username: &str, query: &UserHistoryQuery) -> Result<Listing<Thing<Post>>, ServiceError> {
-		validate_username(username)?;
-		validate_user_history_query(query)?;
-		let path = with_query(format!("/user/{username}/submitted"), query_codec::encode(query));
-		let json = self.client.json(path).await?;
+		let json = self.user_history(username, "submitted", query).await?;
 		let mut listing = parse_post_listing(&json)?;
 		clear_listing_modhash(&mut listing);
 		self.content.filter_posts(&mut listing);
@@ -19,10 +15,7 @@ impl RedditService {
 	}
 
 	pub async fn user_comments(&self, username: &str, query: &UserHistoryQuery) -> Result<Listing<PublicThing>, ServiceError> {
-		validate_username(username)?;
-		validate_user_history_query(query)?;
-		let path = with_query(format!("/user/{username}/comments"), query_codec::encode(query));
-		let json = self.client.json(path).await?;
+		let json = self.user_history(username, "comments", query).await?;
 		let mut listing = parse_user_comment_listing(&json)?;
 		clear_public_listing_modhash(&mut listing);
 		if !self.content.allows_nsfw() {
@@ -57,6 +50,24 @@ impl RedditService {
 		}
 		self.content.filter_public(&mut listing);
 		Ok(listing)
+	}
+
+	async fn user_history(&self, username: &str, kind: &str, query: &UserHistoryQuery) -> Result<serde_json::Value, ServiceError> {
+		validate_username(username)?;
+		validate_user_history_query(query)?;
+		Ok(
+			self
+				.client
+				.read_user_activity(
+					username,
+					kind,
+					query.sort.unwrap_or(UserHistorySort::New).as_str(),
+					query.listing.time.map(crate::service::ListingTime::as_str),
+					query.listing.after.as_deref(),
+					query.listing.limit,
+				)
+				.await?,
+		)
 	}
 }
 

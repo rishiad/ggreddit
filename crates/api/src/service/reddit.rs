@@ -1,7 +1,6 @@
 use crate::client::RedditClient;
 use crate::models::{Listing, Post, PostComments, Subreddit, Thing, User};
 use crate::parsing::{parse_post_listing, parse_subreddit, parse_user};
-use crate::service::query_codec;
 use crate::service::sanitize::{clear_listing_modhash, clear_post_comments_modhash};
 use crate::service::{ContentPolicy, ServiceError};
 
@@ -41,7 +40,7 @@ impl RedditService {
 
 	pub async fn posts_by_id(&self, names: &str) -> Result<Listing<Thing<Post>>, ServiceError> {
 		let names = canonical_post_fullnames(names)?;
-		let json = self.client.json(format!("/by_id/{names}")).await?;
+		let json = self.client.read_posts(&names).await?;
 		let mut listing = parse_post_listing(&json)?;
 		clear_listing_modhash(&mut listing);
 		self.content.filter_posts(&mut listing);
@@ -54,12 +53,16 @@ impl RedditService {
 
 	pub async fn subreddit_post_comments(&self, subreddit: &str, article: &str, query: &CommentQuery) -> Result<PostComments, ServiceError> {
 		validate_subreddit(subreddit)?;
-		self.comments(article, query).await
+		let comments = self.comments(article, query).await?;
+		if comments.0.data.children.first().is_none_or(|post| !post.data.subreddit.eq_ignore_ascii_case(subreddit)) {
+			return Err(ServiceError::PostNotFound);
+		}
+		Ok(comments)
 	}
 
 	pub async fn subreddit_about(&self, subreddit: &str) -> Result<Thing<Subreddit>, ServiceError> {
 		validate_subreddit(subreddit)?;
-		let json = self.client.json(format!("/r/{subreddit}/about")).await?;
+		let json = self.client.read_community(subreddit).await?;
 		let subreddit = parse_subreddit(&json)?;
 		self.content.require_subreddit(&subreddit)?;
 		Ok(subreddit)
@@ -77,7 +80,7 @@ impl RedditService {
 
 	pub async fn user_about(&self, username: &str) -> Result<Thing<User>, ServiceError> {
 		validate_username(username)?;
-		let json = self.client.json(format!("/user/{username}/about")).await?;
+		let json = self.client.read_user(username).await?;
 		let user = parse_user(&json)?;
 		self.content.require_user(&user)?;
 		Ok(user)
@@ -88,9 +91,10 @@ impl RedditService {
 		if query.time.is_some() && sort != PostSort::Top {
 			return Err(invalid_parameter("t", "only supported for top feeds"));
 		}
-		let base = format!("/r/{}/{}", subreddit.replace('+', "%2B"), sort.as_str());
-		let path = with_query(base, query_codec::encode(query));
-		let json = self.client.json(path).await?;
+		let json = self
+			.client
+			.read_feed(subreddit, sort.as_str(), query.time.map(ListingTime::as_str), query.after.as_deref(), query.limit)
+			.await?;
 		let mut listing = parse_post_listing(&json)?;
 		clear_listing_modhash(&mut listing);
 		self.content.filter_posts(&mut listing);
@@ -104,14 +108,6 @@ impl RedditService {
 		clear_post_comments_modhash(&mut comments);
 		self.content.require_post_comments(&comments)?;
 		Ok(comments)
-	}
-}
-
-pub(super) fn with_query(base: String, query: String) -> String {
-	if query.is_empty() {
-		base
-	} else {
-		format!("{base}?{query}")
 	}
 }
 
