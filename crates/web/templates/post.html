@@ -8,6 +8,19 @@
   </nav>
 {% endblock %}
 
+{% block scripts %}
+  {% match post.item.video %}
+    {% when Some with (video) %}
+      {% if video.hls %}
+        <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js"
+                integrity="sha384-V5ruNBgmYcC3SJRUQeNykAAAgde5gOFq/Hu0CZj7bygDP0yRIhkvX8+w0u/7mRvr"
+                crossorigin="anonymous"></script>
+        <script defer src="/assets/video.js"></script>
+      {% endif %}
+    {% when None %}
+  {% endmatch %}
+{% endblock %}
+
 {% block content %}
   <article id="post" class="post-entry">
     <div class="post-detail">

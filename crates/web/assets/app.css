@@ -240,6 +240,16 @@ a:focus-visible {
   object-fit: contain;
 }
 
+.video-player[hidden],
+.video-fallback[hidden] {
+  display: none;
+}
+
+.video-fallback {
+  padding: 1em;
+  color: #fff;
+}
+
 .pagination {
   margin-top: 1.5em;
   padding: 0;

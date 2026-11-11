@@ -49,6 +49,7 @@ pub struct PostFlair {
 pub struct VideoView {
 	pub poster: Option<String>,
 	pub source: String,
+	pub hls: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -312,10 +313,14 @@ pub fn subreddit_feed_item(post: &Post, signer: &MediaSigner, subreddit_is_nsfw:
 
 fn feed_item_with_video(post: &Post, signer: &MediaSigner) -> FeedItem {
 	let mut item = feed_item(post, signer);
-	if let Some(source) = reddit_video_source(post).and_then(|source| signer.signed_media_url(source)) {
+	let mp4 = reddit_video_source(post).and_then(|source| signer.signed_media_url(source));
+	let hls = mp4.is_none();
+	let source = mp4.or_else(|| reddit_hls_source(post).and_then(|source| signer.signed_media_url(source)));
+	if let Some(source) = source {
 		item.video = Some(VideoView {
 			poster: preview_url(post).and_then(|url| signer.signed_media_url(url)),
 			source,
+			hls,
 		});
 	}
 	item
@@ -344,7 +349,14 @@ mod video_tests {
 		.unwrap();
 		let native = post_view(&post, &signer, ImageDisplay::Inline);
 		assert!(native.item.video.as_ref().unwrap().source.starts_with("/media/"));
+		assert!(!native.item.video.as_ref().unwrap().hls);
 		assert_eq!(native.item.href, post.permalink);
+		post
+			.extra
+			.insert("secure_media".into(), json!({"reddit_video": {"hls_url": "https://v.redd.it/abc/HLSPlaylist.m3u8"}}));
+		let streaming = post_view(&post, &signer, ImageDisplay::Inline);
+		assert!(streaming.item.video.as_ref().unwrap().hls);
+		assert!(streaming.item.video.as_ref().unwrap().source.starts_with("/media/"));
 
 		post.url = "https://example.com/watch/abc".into();
 		post.extra.remove("secure_media");
@@ -361,6 +373,15 @@ fn reddit_video_source(post: &Post) -> Option<&str> {
 		.get("secure_media")
 		.and_then(|media| media.pointer("/reddit_video/fallback_url"))
 		.or_else(|| post.extra.get("media").and_then(|media| media.pointer("/reddit_video/fallback_url")))
+		.and_then(Value::as_str)
+}
+
+fn reddit_hls_source(post: &Post) -> Option<&str> {
+	post
+		.extra
+		.get("secure_media")
+		.and_then(|media| media.pointer("/reddit_video/hls_url"))
+		.or_else(|| post.extra.get("media").and_then(|media| media.pointer("/reddit_video/hls_url")))
 		.and_then(Value::as_str)
 }
 

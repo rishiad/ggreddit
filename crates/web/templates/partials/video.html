@@ -1,7 +1,8 @@
 <div class="hosted-video">
   <div class="video-stage">
-    <video class="video-player" controls playsinline preload="metadata"{% if post.inline_image %}{% match video.poster %}{% when Some with (poster) %} poster="{{ poster }}"{% when None %}{% endmatch %}{% endif %}>
-      <source src="{{ video.source }}" type="video/mp4">
+    <video class="video-player" controls playsinline preload="metadata"{% if video.hls %} data-hls-src="{{ video.source }}"{% endif %}{% if post.inline_image %}{% match video.poster %}{% when Some with (poster) %} poster="{{ poster }}"{% when None %}{% endmatch %}{% endif %}>
+      {% if !video.hls %}<source src="{{ video.source }}" type="video/mp4">{% endif %}
     </video>
+    {% if video.hls %}<a class="video-fallback" href="{{ post.item.permalink }}">View video post</a>{% endif %}
   </div>
 </div>

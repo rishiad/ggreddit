@@ -97,7 +97,7 @@ pub fn router(service: RedditService, media: MediaProxy, image_display: ImageDis
 }
 
 fn system_routes() -> Router {
-	health_router().route("/assets/app.css", get(stylesheet))
+	health_router().route("/assets/app.css", get(stylesheet)).route("/assets/video.js", get(video_script))
 }
 
 pub fn health_router() -> Router {
@@ -112,6 +112,13 @@ async fn stylesheet() -> impl IntoResponse {
 	(
 		[(header::CONTENT_TYPE, "text/css; charset=utf-8"), (header::CACHE_CONTROL, "no-cache")],
 		include_str!("../assets/app.css"),
+	)
+}
+
+async fn video_script() -> impl IntoResponse {
+	(
+		[(header::CONTENT_TYPE, "text/javascript; charset=utf-8"), (header::CACHE_CONTROL, "public, max-age=86400")],
+		include_str!("../assets/video.js"),
 	)
 }
 
