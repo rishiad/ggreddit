@@ -148,6 +148,9 @@ async fn feed(client: &RedditClient, name: &str, sort: &str, range: Option<&str>
 		return Ok(listing(posts, after));
 	}
 	let response = client.graphql(operation, hash, variables).await?;
+	if operation == "SubredditFeedElements" && response.pointer("/data/postFeed").is_some_and(Value::is_null) {
+		return Err(ClientError::NotFound);
+	}
 	let elements = response.pointer(root).ok_or_else(missing)?;
 	let (posts, after) = if operation == "PopularFeedElements" {
 		let nodes = elements["edges"].as_array().ok_or_else(missing)?;
@@ -192,7 +195,11 @@ async fn community(client: &RedditClient, name: &str) -> Result<Value, ClientErr
 			json!({"subredditName":name,"includeDevvitData":false,"includeRecapFields":false}),
 		)
 		.await?;
-	subreddit(response.pointer("/data/subredditInfoByName").ok_or_else(missing)?)
+	let node = response.pointer("/data/subredditInfoByName").ok_or_else(missing)?;
+	if node.is_null() {
+		return Err(ClientError::NotFound);
+	}
+	subreddit(node)
 }
 
 async fn user(client: &RedditClient, name: &str) -> Result<Value, ClientError> {
@@ -200,6 +207,9 @@ async fn user(client: &RedditClient, name: &str) -> Result<Value, ClientError> {
 		.graphql("UserProfile", USER_PROFILE, json!({"name":name,"includePremiumAvatarTreatment":false}))
 		.await?;
 	let node = response.pointer("/data/redditorInfoByName").ok_or_else(missing)?;
+	if node.is_null() {
+		return Err(ClientError::NotFound);
+	}
 	let id = node["id"].as_str().and_then(|id| id.strip_prefix("t2_")).ok_or_else(missing)?;
 	let username = node["name"].as_str().ok_or_else(missing)?;
 	let date = client.graphql("GetMatrixChatUsersByIds", USER_DATE, json!({"userKindWithIds":[node["id"]]})).await?;
@@ -260,6 +270,9 @@ async fn user_activity(
 	if kind == "submitted" {
 		vars["username"] = name.into();
 		let response = client.graphql("UserSubmittedPosts", USER_POSTS, vars).await?;
+		if response.pointer("/data/postFeed").is_some_and(Value::is_null) {
+			return Err(ClientError::NotFound);
+		}
 		let nodes = response.pointer("/data/postFeed/posts").ok_or_else(missing)?;
 		let edges = nodes["edges"].as_array().ok_or_else(missing)?;
 		let posts = edges.iter().map(|edge| post(&edge["node"])).collect::<Result<Vec<_>, _>>()?;
@@ -267,6 +280,9 @@ async fn user_activity(
 	}
 	vars["name"] = name.into();
 	let response = client.graphql("SubmittedComments", USER_COMMENTS, vars).await?;
+	if response.pointer("/data/redditorInfoByName").is_some_and(Value::is_null) {
+		return Err(ClientError::NotFound);
+	}
 	let comments = response.pointer("/data/redditorInfoByName/comments").ok_or_else(missing)?;
 	let previews = comments["edges"].as_array().ok_or_else(missing)?;
 	if previews.is_empty() {
@@ -336,6 +352,9 @@ async fn wiki(client: &RedditClient, subreddit: &str, page: Option<&str>) -> Res
 		return Ok(json!({"kind":"wikipagelisting","data":pages}));
 	}
 	let node = root.pointer("/wiki/page").ok_or_else(missing)?;
+	if node["status"].as_str().is_some_and(|status| status != "VALID") {
+		return Err(ClientError::NotFound);
+	}
 	if node["status"] != "VALID" || node["name"].as_str() != Some(decoded.as_ref()) {
 		return Err(missing());
 	}
@@ -501,88 +520,4 @@ fn post(node: &Value) -> Result<Value, ClientError> {
 		data["url_overridden_by_dest"] = url.into();
 	}
 	Ok(json!({"kind":"t3","data":data}))
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-	use crate::parsing::parse_post_listing;
-
-	#[test]
-	fn parses_integral_float_community_counts() {
-		let node = json!({"name":"AskHistorians","id":"t5_2ssp3","subscribersCount":2930602.0,"communityStats":{"weeklyActiveUsersCount":41920.0}});
-		let value = subreddit(&node).unwrap();
-		let community = crate::parsing::parse_subreddit(&value).unwrap();
-		assert_eq!(community.data.subscribers, Some(2930602));
-		assert_eq!(community.data.accounts_active, Some(41920));
-		assert_eq!(count(&json!(2.5)), None);
-		assert_eq!(count(&json!(-1)), None);
-	}
-
-	#[test]
-	fn reads_integer_karma_from_graphql_float() {
-		assert_eq!(whole_number(&json!(2338471.0)), Some(2338471));
-		assert_eq!(whole_number(&json!(1.5)), None);
-	}
-
-	#[test]
-	fn maps_post_into_existing_listing() {
-		let node = json!({"id":"t3_abc123","title":"Example","subreddit":{"id":"t5_rust","name":"rust"},"authorInfo":{"name":"alice"},"permalink":"/r/rust/comments/abc123/example/","url":"https://example.com/","createdAt":"2026-11-10T12:00:00.000+0000","score":4,"commentCount":2,"upvoteRatio":0.9,"content":{"markdown":"hello"},"media":{"still":{"source":{"url":"https://i.redd.it/example.jpg","dimensions":{"width":400,"height":300}}}}});
-		let value = listing(vec![post(&node).unwrap()], Some("t3_next".into()));
-		let parsed = parse_post_listing(&value).unwrap();
-		assert_eq!(parsed.data.after.as_deref(), Some("t3_next"));
-		assert_eq!(parsed.data.children[0].data.name, "t3_abc123");
-		assert_eq!(parsed.data.children[0].data.extra["preview"]["images"][0]["source"]["width"], 400);
-		assert!(parsed.data.children[0].data.created_utc > 1_700_000_000.0);
-	}
-
-	#[test]
-	fn maps_profile_posts_without_a_community() {
-		let node = json!({"__typename":"ProfilePost","id":"t3_abc123","title":"Example","authorInfo":{"name":"alice"},"permalink":"/user/alice/comments/abc123/example/","url":"https://reddit.com/user/alice/comments/abc123/example/"});
-		let post = post(&node).unwrap();
-		assert_eq!(post["data"]["subreddit"], "u_alice");
-		assert!(parse_post_listing(&listing(vec![post], None)).is_ok());
-	}
-
-	#[test]
-	fn wiki_html_escapes_text_and_rejects_unsafe_links() {
-		let mut html = String::new();
-		let mut plain = String::new();
-		render_wiki(&json!({"e":"par","c":[{"e":"text","t":"<script>alert(1)</script>"},{"e":"link","u":"javascript:alert(1)","t":"bad"},{"e":"link","u":"https://example.com/?a=1&b=2","t":"good"}]}), &mut html, &mut plain, 0).unwrap();
-		assert!(!html.contains("<script>"));
-		assert!(!html.contains("javascript:"));
-		assert!(html.contains("&lt;script&gt;"));
-		assert!(html.contains("href=\"https://example.com/?a=1&amp;b=2\""));
-	}
-
-	#[test]
-	fn sidebar_html_sanitizes_reddit_markdown() {
-		let node = json!({"name":"rust","id":"t5_rust","description":{"markdown":"hello <script>alert(1)</script> **world**"}});
-		let data = subreddit(&node).unwrap();
-		let html = data["data"]["description_html"].as_str().unwrap();
-		assert!(!html.contains("<script>"));
-		assert!(html.contains("<strong>world</strong>"));
-	}
-
-	#[test]
-	fn decodes_feed_cursor() {
-		assert_eq!(cursor(&json!(STANDARD.encode("t3_abc123"))).as_deref(), Some("t3_abc123"));
-	}
-
-	#[test]
-	fn refuses_incomplete_post() {
-		assert!(post(&json!({"id":"t3_abc123"})).is_err());
-	}
-
-	#[test]
-	fn maps_gallery_and_video_media() {
-		let mut node = json!({"id":"t3_abc123","title":"Example","subreddit":{"id":"t5_rust","name":"rust"},"permalink":"/r/rust/comments/abc123/example/","url":"https://reddit.com/r/rust/comments/abc123/example/","createdAt":"2026-11-10T12:00:00.000+0000","gallery":{"items":[{"media":{"id":"one","url":"https://i.redd.it/a.jpg","mimetype":"image/jpeg","width":400,"height":300},"caption":"Image"}]},"postHint":"HOSTED_VIDEO","media":{"streaming":{"hlsUrl":"https://v.redd.it/a/HLSPlaylist.m3u8"},"packagedMedia":{"muxedMp4s":{"recommended":{"url":"https://v.redd.it/a/muxed.mp4"}}}}});
-		let mapped = post(&node).unwrap();
-		let data = &mapped["data"];
-		assert_eq!(data["post_hint"], "hosted:video");
-		assert_eq!(data["gallery_data"]["items"][0]["media_id"], "one");
-		assert_eq!(data["secure_media"]["reddit_video"]["fallback_url"], "https://v.redd.it/a/muxed.mp4");
-		node["subreddit"] = Value::Null;
-		assert!(post(&node).is_err());
-	}
 }

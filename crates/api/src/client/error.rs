@@ -12,6 +12,8 @@ pub enum ClientError {
 	InvalidEnvelope,
 	#[error("no GraphQL operation for `{path}`")]
 	UnsupportedPath { path: String },
+	#[error("Reddit did not find the requested resource")]
+	NotFound,
 	#[error("failed to build Reddit HTTP client")]
 	BuildClient(#[source] wreq::Error),
 

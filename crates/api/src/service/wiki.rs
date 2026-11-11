@@ -16,7 +16,7 @@ impl RedditService {
 		validate_subreddit(subreddit)?;
 		self.require_safe_subreddit(subreddit).await?;
 		if query.v.is_some() || query.v2.is_some() {
-			return Err(ServiceError::UnsupportedWikiRevision);
+			return Err(ServiceError::BadRequest);
 		}
 		let page = encode_wiki_page(page)?;
 		let path = format!("/r/{subreddit}/wiki/{page}");

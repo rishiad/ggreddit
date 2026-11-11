@@ -1,5 +1,4 @@
-use crate::client::error::ClientError;
-use crate::service::{ServiceError, ServiceError::Client};
+use crate::service::ServiceError;
 use axum::{
 	body::Body,
 	http::{header, HeaderValue, StatusCode},
@@ -20,7 +19,7 @@ impl ApiError {
 	fn status(&self) -> StatusCode {
 		match self {
 			Self::InvalidQuery => StatusCode::BAD_REQUEST,
-			Self::Service(error) => service_status(error),
+			Self::Service(error) => error.status_code(),
 		}
 	}
 
@@ -28,36 +27,17 @@ impl ApiError {
 		if matches!(self, Self::Service(ServiceError::ContentBlocked)) {
 			return "This server has NSFW disabled";
 		}
-		if matches!(self, Self::Service(ServiceError::UnsupportedCombinedFeed)) {
-			return "Combined community feeds are not supported";
-		}
-		if matches!(self, Self::Service(ServiceError::UnsupportedWikiRevision)) {
-			return "Wiki revisions and diffs are not supported";
-		}
 		match self.status() {
 			StatusCode::BAD_REQUEST => "Bad Request",
 			StatusCode::UNAUTHORIZED => "Unauthorized",
 			StatusCode::FORBIDDEN => "Forbidden",
 			StatusCode::NOT_FOUND => "Not Found",
 			StatusCode::TOO_MANY_REQUESTS => "Too Many Requests",
+			StatusCode::GATEWAY_TIMEOUT => "Gateway Timeout",
+			StatusCode::SERVICE_UNAVAILABLE => "Service Unavailable",
+			StatusCode::INTERNAL_SERVER_ERROR => "Internal Server Error",
 			_ => "Bad Gateway",
 		}
-	}
-}
-
-fn service_status(error: &ServiceError) -> StatusCode {
-	match error {
-		ServiceError::InvalidSubreddit { .. }
-		| ServiceError::ConflictingCursors
-		| ServiceError::InvalidCursor { .. }
-		| ServiceError::InvalidLimit { .. }
-		| ServiceError::InvalidParameter { .. } => StatusCode::BAD_REQUEST,
-		ServiceError::ContentBlocked => StatusCode::FORBIDDEN,
-		ServiceError::UnsupportedCombinedFeed | ServiceError::UnsupportedWikiRevision => StatusCode::BAD_REQUEST,
-		ServiceError::Parse(_) | ServiceError::InvalidGraphqlComments => StatusCode::BAD_GATEWAY,
-		Client(ClientError::Unauthorized) => StatusCode::UNAUTHORIZED,
-		Client(ClientError::RateLimited { .. }) => StatusCode::TOO_MANY_REQUESTS,
-		Client(_) => StatusCode::BAD_GATEWAY,
 	}
 }
 

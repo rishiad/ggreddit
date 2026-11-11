@@ -15,7 +15,6 @@ const ERROR_DESCRIPTIONS: &[(u16, &str)] = &[
 	(404, "The requested page could not be found."),
 	(405, "This request method is not supported."),
 	(408, "The request timed out."),
-	(409, "The request conflicts with the current state."),
 	(410, "The requested page is no longer available."),
 	(413, "The request is too large."),
 	(429, "Too many requests. Please try again later."),
@@ -53,16 +52,10 @@ impl IntoResponse for AppError {
 		if matches!(&self, Self::Service(ServiceError::ContentBlocked)) {
 			return response_with_description(StatusCode::FORBIDDEN, "This server has NSFW disabled.");
 		}
-		if matches!(&self, Self::Service(ServiceError::UnsupportedCombinedFeed)) {
-			return response_with_description(StatusCode::BAD_REQUEST, "Combined community feeds are not supported.");
-		}
-		if matches!(&self, Self::Service(ServiceError::UnsupportedWikiRevision)) {
-			return response_with_description(StatusCode::BAD_REQUEST, "Wiki revisions and diffs are not supported.");
-		}
 		let status = match self {
 			Self::InvalidPagination | Self::InvalidSort | Self::InvalidFeedTime | Self::InvalidCommentSort => StatusCode::BAD_REQUEST,
 			Self::PostNotFound => StatusCode::NOT_FOUND,
-			Self::Service(_) => StatusCode::BAD_GATEWAY,
+			Self::Service(error) => error.status_code(),
 		};
 		response(status)
 	}

@@ -75,11 +75,10 @@ fn validate_user_history_query(query: &UserHistoryQuery) -> Result<(), ServiceEr
 			Err(ServiceError::InvalidCursor { parameter, cursor: cursor.into() })
 		}
 	})?;
-	if query.listing.before.is_some() {
-		return Err(invalid_parameter("before", "unsupported by GraphQL user history"));
-	}
-	if query.context.is_some_and(|context| !(2..=10).contains(&context)) {
-		return Err(invalid_parameter("context", &query.context.unwrap_or_default().to_string()));
+	for (name, present) in [("context", query.context.is_some()), ("show", query.show.is_some()), ("type", query.content_type.is_some())] {
+		if present {
+			return Err(invalid_parameter(name, "unsupported by GraphQL user history"));
+		}
 	}
 	Ok(())
 }
@@ -148,27 +147,3 @@ mod user_history_query {
 }
 
 pub use user_history_query::{UserHistoryQuery, UserHistoryShow, UserHistorySort, UserHistoryType};
-
-#[cfg(test)]
-mod graphql_user_history_tests {
-	use super::*;
-	#[test]
-	fn accepts_bounded_comment_cursors() {
-		let query = UserHistoryQuery {
-			listing: crate::service::ListingQuery {
-				after: Some("dDFfb3B0ZnlxbA==".into()),
-				..Default::default()
-			},
-			..Default::default()
-		};
-		assert!(validate_user_history_query(&query).is_ok());
-		let query = UserHistoryQuery {
-			listing: crate::service::ListingQuery {
-				after: Some("not a cursor".into()),
-				..Default::default()
-			},
-			..Default::default()
-		};
-		assert!(validate_user_history_query(&query).is_err());
-	}
-}

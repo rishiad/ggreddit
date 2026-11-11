@@ -170,6 +170,16 @@ async fn follow_redirects(media: &MediaProxy, mut target: Url, headers: &HeaderM
 }
 
 async fn finish_proxy_response(mut response: Response, target: &Url, signer: &MediaSigner, etag: &str, cache_control: &'static str) -> Result<Response, ProxyError> {
+	match response.status() {
+		StatusCode::TOO_MANY_REQUESTS | StatusCode::SERVICE_UNAVAILABLE => return Err(ProxyError::UpstreamUnavailable),
+		StatusCode::GATEWAY_TIMEOUT => return Err(ProxyError::UpstreamTimeout),
+		status
+			if status != StatusCode::NOT_MODIFIED && !status.is_success() && !matches!(status, StatusCode::NOT_FOUND | StatusCode::GONE | StatusCode::RANGE_NOT_SATISFIABLE) =>
+		{
+			return Err(ProxyError::UpstreamFailure);
+		}
+		_ => {}
+	}
 	if response.status().is_success() && is_hls(&response, target) {
 		response = rewrite_manifest(response, |manifest| signer.rewrite_hls(manifest, target)).await?;
 	} else if response.status().is_success() && is_dash(&response, target) {
@@ -262,13 +272,24 @@ enum ProxyError {
 	ManifestBody(#[source] axum::Error),
 	#[error("failed to construct media ETag")]
 	InvalidEtag,
+	#[error("Reddit media is temporarily unavailable")]
+	UpstreamUnavailable,
+	#[error("Reddit media timed out")]
+	UpstreamTimeout,
+	#[error("Reddit media returned an unexpected status")]
+	UpstreamFailure,
 }
 
 impl IntoResponse for ProxyError {
 	fn into_response(self) -> Response {
 		let status = match self {
-			Self::MediaUrl(MediaUrlError::InvalidSignature) | Self::MediaUrl(MediaUrlError::ForbiddenTarget) | Self::ForbiddenRedirect => StatusCode::FORBIDDEN,
+			Self::MediaUrl(MediaUrlError::InvalidSignature | MediaUrlError::ForbiddenTarget) => StatusCode::FORBIDDEN,
 			Self::MediaUrl(MediaUrlError::InvalidEncoding | MediaUrlError::InvalidTarget) => StatusCode::BAD_REQUEST,
+			Self::UpstreamTimeout | Self::Client(ClientError::Timeout | ClientError::Auth(crate::client::AuthError::Timeout)) => StatusCode::GATEWAY_TIMEOUT,
+			Self::UpstreamUnavailable | Self::Client(ClientError::Unauthorized | ClientError::RateLimited { .. } | ClientError::Auth(_)) => StatusCode::SERVICE_UNAVAILABLE,
+			Self::InvalidEtag
+			| Self::MediaUrl(MediaUrlError::ShortSecret | MediaUrlError::InvalidDomainPattern(_))
+			| Self::Client(ClientError::BuildClient(_) | ClientError::ResponseBuild(_) | ClientError::UnsupportedPath { .. }) => StatusCode::INTERNAL_SERVER_ERROR,
 			_ => StatusCode::BAD_GATEWAY,
 		};
 		(status, self.to_string()).into_response()

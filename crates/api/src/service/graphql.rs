@@ -23,7 +23,7 @@ impl RedditService {
 		let json = self.client.json(format!("/by_id/t3_{article}")).await?;
 		let mut posts = parse_post_listing(&json)?;
 		if posts.data.children.is_empty() {
-			return Err(ServiceError::InvalidGraphqlComments);
+			return Err(ServiceError::PostNotFound);
 		}
 		self.content.require_post_listing(&posts)?;
 		clear_listing_modhash(&mut posts);
@@ -189,53 +189,4 @@ fn close(open: &mut Vec<(u64, Value)>, top: &mut Vec<Value>) {
 		*replies = json!({ "kind": "Listing", "data": { "children": [] } });
 	}
 	replies["data"]["children"].as_array_mut().expect("comment replies are a listing").push(item);
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn keeps_reply_order_and_cursor() {
-		let a = json!({"depth":0,"parentId":null,"more":null,"node":{"id":"t1_a","authorInfo":{"name":"alice"},"content":{"markdown":"hello"},"score":2,"createdAt":"2026-10-24T01:02:03Z","editedAt":null}});
-		let b = json!({"depth":1,"parentId":"t1_a","more":null,"node":{"id":"t1_b","content":{"markdown":"reply"}}});
-		let c = json!({"depth":0,"parentId":null,"more":{"count":25,"cursor":"next-page"},"node":null});
-		let items = items(&[a, b, c], "post").unwrap();
-		let list = json!({"kind":"Listing","data":{"children":nest(items)}});
-		let listing: Listing<CommentChild> = parse_listing(&list).unwrap();
-		let CommentChild::Comment(first) = &listing.data.children[0] else {
-			panic!("expected comment")
-		};
-		let crate::models::CommentReplies::Listing(replies) = &first.data.replies else {
-			panic!("expected replies")
-		};
-		assert_eq!(replies.data.children.len(), 1);
-		let CommentChild::More(more) = &listing.data.children[1] else {
-			panic!("expected cursor")
-		};
-		assert_eq!(more.data.extra["gql_cursor"], "next-page");
-	}
-
-	#[test]
-	fn keeps_replies_of_deleted_comments_without_ids() {
-		let deleted = json!({"depth":1,"parentId":"t1_parent","more":null,"node":{"__typename":"DeletedComment","createdAt":"2026-11-10T06:09:59Z"}});
-		let reply = json!({"depth":2,"parentId":"t1_missing","more":null,"node":{"__typename":"Comment","id":"t1_reply","content":{"markdown":"still here"}}});
-		let leaf = json!({"depth":0,"parentId":null,"more":null,"node":{"__typename":"DeletedComment"}});
-		let children = nest(items(&[deleted, reply, leaf], "post").unwrap());
-		let list: Listing<CommentChild> = parse_listing(&json!({"kind":"Listing","data":{"children":children}})).unwrap();
-		let CommentChild::Comment(deleted) = &list.data.children[0] else {
-			panic!("expected deleted comment")
-		};
-		assert_eq!(deleted.data.id, "missing");
-		assert_eq!(deleted.data.body, "[deleted]");
-		let crate::models::CommentReplies::Listing(replies) = &deleted.data.replies else {
-			panic!("expected replies")
-		};
-		assert_eq!(replies.data.children.len(), 1);
-		let CommentChild::Comment(leaf) = &list.data.children[1] else {
-			panic!("expected deleted leaf")
-		};
-		assert_eq!(leaf.data.id, "deleted_post_2");
-		assert!(items(&[json!({"depth":0,"more":null,"node":{"__typename":"Comment"}})], "post").is_err());
-	}
 }

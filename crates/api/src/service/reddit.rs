@@ -30,7 +30,7 @@ impl RedditService {
 	pub async fn subreddit_posts(&self, subreddit: &str, sort: PostSort, query: &ListingQuery) -> Result<Listing<Thing<Post>>, ServiceError> {
 		validate_subreddit(subreddit)?;
 		if subreddit.contains('+') {
-			return Err(ServiceError::UnsupportedCombinedFeed);
+			return Err(ServiceError::BadRequest);
 		}
 		self.require_safe_subreddit(subreddit).await?;
 		if sort == PostSort::Best {
@@ -85,6 +85,9 @@ impl RedditService {
 
 	async fn post_listing(&self, subreddit: &str, sort: PostSort, query: &ListingQuery) -> Result<Listing<Thing<Post>>, ServiceError> {
 		validate_listing_query(query)?;
+		if query.time.is_some() && sort != PostSort::Top {
+			return Err(invalid_parameter("t", "only supported for top feeds"));
+		}
 		let base = format!("/r/{}/{}", subreddit.replace('+', "%2B"), sort.as_str());
 		let path = with_query(base, query_codec::encode(query));
 		let json = self.client.json(path).await?;
@@ -145,18 +148,22 @@ pub(super) fn validate_listing_query_with(query: &ListingQuery, cursor_validator
 	if let Some(cursor) = &query.after {
 		cursor_validator("after", cursor)?;
 	}
-	if let Some(cursor) = &query.before {
-		cursor_validator("before", cursor)?;
+	if query.before.is_some() {
+		return Err(invalid_parameter("before", "unsupported by GraphQL"));
 	}
 	if query.limit.is_some_and(|limit| !(1..=100).contains(&limit)) {
 		return Err(ServiceError::InvalidLimit {
 			limit: query.limit.unwrap_or_default(),
 		});
 	}
-	if let Some(geo_filter) = &query.geo_filter {
-		let valid = !geo_filter.is_empty() && geo_filter.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_');
-		if !valid {
-			return Err(invalid_parameter("g", geo_filter));
+	for (name, present) in [
+		("count", query.count.is_some()),
+		("show", query.show.is_some()),
+		("sr_detail", query.sr_detail.is_some()),
+		("g", query.geo_filter.is_some()),
+	] {
+		if present {
+			return Err(invalid_parameter(name, "unsupported by GraphQL"));
 		}
 	}
 	Ok(())

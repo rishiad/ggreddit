@@ -107,7 +107,7 @@ pub async fn subreddit_feed(
 	Query(query): Query<FeedQuery>,
 ) -> Result<SubredditTemplate, AppError> {
 	if subreddit.contains('+') {
-		return Err(ServiceError::UnsupportedCombinedFeed.into());
+		return Err(ServiceError::BadRequest.into());
 	}
 	let (sort, sort_name) = parse_post_sort(query.sort.as_deref(), true)?;
 	let (time, time_name) = parse_time(sort == PostSort::Top, query.t.as_deref())?;
@@ -255,7 +255,7 @@ async fn wiki_response(
 	query: WikiQuery,
 ) -> Result<Response, AppError> {
 	if query.v.is_some() || query.v2.is_some() {
-		return Err(ServiceError::UnsupportedWikiRevision.into());
+		return Err(ServiceError::BadRequest.into());
 	}
 	let query = WikiPageQuery { v: query.v, v2: query.v2 };
 	let (community, pages) = tokio::try_join!(service.subreddit_about(&subreddit), service.wiki_pages(&subreddit),)?;

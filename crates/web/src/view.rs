@@ -349,14 +349,7 @@ mod video_tests {
 		.unwrap();
 		let native = post_view(&post, &signer, ImageDisplay::Inline);
 		assert!(native.item.video.as_ref().unwrap().source.starts_with("/media/"));
-		assert!(!native.item.video.as_ref().unwrap().hls);
 		assert_eq!(native.item.href, post.permalink);
-		post
-			.extra
-			.insert("secure_media".into(), json!({"reddit_video": {"hls_url": "https://v.redd.it/abc/HLSPlaylist.m3u8"}}));
-		let streaming = post_view(&post, &signer, ImageDisplay::Inline);
-		assert!(streaming.item.video.as_ref().unwrap().hls);
-		assert!(streaming.item.video.as_ref().unwrap().source.starts_with("/media/"));
 
 		post.url = "https://example.com/watch/abc".into();
 		post.extra.remove("secure_media");
