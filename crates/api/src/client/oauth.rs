@@ -3,7 +3,7 @@ mod manager;
 
 use thiserror::Error;
 
-pub(crate) use manager::{CredentialLease, OAuthHandle};
+pub(crate) use manager::OAuthHandle;
 
 #[derive(Debug, Error)]
 pub enum AuthError {

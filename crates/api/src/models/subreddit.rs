@@ -24,9 +24,3 @@ pub struct Subreddit {
 	#[serde(flatten)]
 	pub extra: Map<String, Value>,
 }
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct Sidebar {
-	pub description: Option<String>,
-	pub description_html: String,
-}

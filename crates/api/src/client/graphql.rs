@@ -16,7 +16,7 @@ const USER_COMMENTS: &str = "e1b37f521fb40af2120946b70e7fbf6a3d924db2abaf28ff216
 const COMMENTS_BY_IDS: &str = "51ab9f2e0eb87b6dac9aac02012ba7046049e516ec55ec442abfed0f19c6f311";
 const WIKI: &str = "32f9314683f033a76812f772bbba771958760286c5cd28c558071a3ff4eb231f";
 
-// Only these known routes use GraphQL. Other Reddit endpoints keep their own handlers.
+// Only these paths have persisted GraphQL operations.
 pub(super) async fn route(client: &RedditClient, path: &str) -> Option<Result<Value, ClientError>> {
 	let (route, query) = path.split_once('?').unwrap_or((path, ""));
 	let params: Vec<_> = form_urlencoded::parse(query.as_bytes()).collect();

@@ -10,6 +10,8 @@ pub enum ClientError {
 	UnexpectedStatus { path: String, status: u16 },
 	#[error("Reddit returned an unexpected HTTP status or JSON error envelope")]
 	InvalidEnvelope,
+	#[error("no GraphQL operation for `{path}`")]
+	UnsupportedPath { path: String },
 	#[error("failed to build Reddit HTTP client")]
 	BuildClient(#[source] wreq::Error),
 
@@ -25,15 +27,6 @@ pub enum ClientError {
 
 	#[error("invalid proxy URL `{url}`")]
 	InvalidProxyUrl { url: String },
-
-	#[error("Reddit returned an invalid redirect for `{path}`")]
-	InvalidRedirect { path: String },
-
-	#[error("Reddit returned a redirect without a Location header for `{path}`")]
-	MissingRedirectLocation { path: String },
-
-	#[error("Reddit exceeded the redirect limit for `{path}`")]
-	TooManyRedirects { path: String },
 
 	#[error("failed to receive the response body for `{path}`")]
 	Body {
@@ -57,29 +50,4 @@ pub enum ClientError {
 
 	#[error("Reddit OAuth token expired")]
 	Unauthorized,
-
-	#[error("Reddit account is suspended")]
-	Suspended,
-
-	#[error("subreddit is quarantined")]
-	Quarantined,
-
-	#[error("subreddit is gated")]
-	Gated,
-
-	#[error("subreddit is private")]
-	Private,
-
-	#[error("subreddit is banned")]
-	Banned,
-
-	#[error("Reddit returned error {code} `{reason}`: {message} for `{path}`")]
-	Reddit { code: i64, reason: String, message: String, path: String },
-
-	#[error("Reddit is unavailable (HTTP {status})")]
-	UpstreamUnavailable {
-		status: u16,
-		#[source]
-		source: serde_json::Error,
-	},
 }

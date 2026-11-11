@@ -1,4 +1,4 @@
-use crate::models::{CommentChild, CommentReplies, Listing, MoreChildren, PostComments, PublicThing};
+use crate::models::{CommentChild, CommentReplies, Listing, PostComments, PublicThing};
 
 pub(super) fn clear_listing_modhash<T>(listing: &mut Listing<T>) {
 	listing.data.modhash = Some(String::new());
@@ -18,10 +18,6 @@ pub(super) fn clear_public_listing_modhash(listing: &mut Listing<PublicThing>) {
 			}
 		}
 	}
-}
-
-pub(super) fn clear_more_children_modhash(response: &mut MoreChildren) {
-	clear_comment_children_modhash(&mut response.json.data.things);
 }
 
 fn clear_comment_listing_modhash(listing: &mut Listing<CommentChild>) {

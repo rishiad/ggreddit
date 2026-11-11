@@ -1,17 +1,16 @@
 use crate::api::query::{ApiQuery, DefaultQuery};
 use crate::api::response::respond;
-use crate::service::{
-	CommentQuery, DuplicateQuery, InfoQuery, ListingQuery, MoreChildrenQuery, PostSort, RedditService, SubredditSort, UserDirectorySort, UserHistoryQuery, WikiPageQuery,
-};
+use crate::service::{CommentQuery, ListingQuery, PostSort, RedditService, UserHistoryQuery, WikiPageQuery};
 use axum::{
 	extract::{Path, State},
-	response::Response,
+	http::StatusCode,
+	response::{IntoResponse, Response},
 	routing::{get, MethodRouter},
 	Router,
 };
 
 fn front_page(sort: PostSort) -> MethodRouter<RedditService> {
-	get(move |State(service): State<RedditService>, ApiQuery(query): ApiQuery<ListingQuery>| async move { respond(service.front_page_posts(sort, &query).await) })
+	get(move |State(service): State<RedditService>, ApiQuery(query): ApiQuery<ListingQuery>| async move { respond(service.all_posts(sort, &query).await) })
 }
 
 fn subreddit(sort: PostSort) -> MethodRouter<RedditService> {
@@ -22,23 +21,13 @@ fn subreddit(sort: PostSort) -> MethodRouter<RedditService> {
 	)
 }
 
-fn subreddits(sort: SubredditSort) -> MethodRouter<RedditService> {
-	get(move |State(service): State<RedditService>, ApiQuery(query): ApiQuery<ListingQuery>| async move { respond(service.subreddits(sort, &query).await) })
-}
-
-fn users(sort: UserDirectorySort) -> MethodRouter<RedditService> {
-	get(move |State(service): State<RedditService>, ApiQuery(query): ApiQuery<ListingQuery>| async move { respond(service.users(sort, &query).await) })
-}
-
 pub(super) fn router() -> Router<RedditService> {
 	Router::new()
 		.route("/", front_page(PostSort::Hot))
-		.route("/best", front_page(PostSort::Best))
 		.route("/hot", front_page(PostSort::Hot))
 		.route("/new", front_page(PostSort::New))
 		.route("/rising", front_page(PostSort::Rising))
 		.route("/top", front_page(PostSort::Top))
-		.route("/controversial", front_page(PostSort::Controversial))
 		.route("/r/{subreddit}/hot", subreddit(PostSort::Hot))
 		.route("/r/{subreddit}/new", subreddit(PostSort::New))
 		.route("/r/{subreddit}/rising", subreddit(PostSort::Rising))
@@ -51,34 +40,14 @@ pub(super) fn router() -> Router<RedditService> {
 		.route("/comments/{article}/{slug}/{comment}", get(post_comment_permalink))
 		.route("/r/{subreddit}/comments/{article}/{slug}", get(subreddit_post_permalink))
 		.route("/r/{subreddit}/comments/{article}/{slug}/{comment}", get(subreddit_post_comment_permalink))
-		.route("/morechildren", get(more_children))
 		.route("/r/{subreddit}/about", get(subreddit_about))
-		.route("/r/{subreddit}/sidebar", get(subreddit_sidebar))
 		.route("/r/{subreddit}/wiki/pages", get(wiki_pages))
-		.route("/r/{subreddit}/wiki/revisions", get(wiki_revisions))
 		.route("/r/{subreddit}/wiki", get(wiki_index))
-		.route("/r/{subreddit}/wiki/revisions/{*page}", get(wiki_page_revisions))
-		.route("/r/{subreddit}/wiki/discussions/{*page}", get(wiki_discussions))
 		.route("/r/{subreddit}/wiki/{*page}", get(wiki_page))
 		.route("/user/{username}/about", get(user_about))
 		.route("/by_id/{names}", get(posts_by_id))
-		.route("/duplicates/{article}", get(post_duplicates))
-		.route("/subreddits/popular", subreddits(SubredditSort::Popular))
-		.route("/subreddits/new", subreddits(SubredditSort::New))
-		.route("/subreddits/default", subreddits(SubredditSort::Default))
-		.route("/info", get(info))
-		.route("/r/{subreddit}/api/info", get(subreddit_info))
-		.route("/user/{username}", get(user_overview))
-		.route("/user/{username}/overview", get(user_overview))
 		.route("/user/{username}/submitted", get(user_submitted))
 		.route("/user/{username}/comments", get(user_comments))
-		.route("/v1/user/{username}/trophies", get(user_trophies))
-		.route("/users/new", users(UserDirectorySort::New))
-		.route("/users/popular", users(UserDirectorySort::Popular))
-}
-
-async fn more_children(State(service): State<RedditService>, ApiQuery(query): ApiQuery<MoreChildrenQuery>) -> Response {
-	respond(service.more_children(&query).await)
 }
 
 async fn post_comments(State(service): State<RedditService>, Path(article): Path<String>, ApiQuery(query): ApiQuery<CommentQuery>) -> Response {
@@ -136,32 +105,19 @@ async fn subreddit_about(State(service): State<RedditService>, Path(subreddit): 
 	respond(service.subreddit_about(&subreddit).await)
 }
 
-async fn subreddit_sidebar(State(service): State<RedditService>, Path(subreddit): Path<String>) -> Response {
-	respond(service.subreddit_sidebar(&subreddit).await)
-}
-
 async fn wiki_pages(State(service): State<RedditService>, Path(subreddit): Path<String>) -> Response {
 	respond(service.wiki_pages(&subreddit).await)
 }
 
 async fn wiki_page(State(service): State<RedditService>, Path((subreddit, page)): Path<(String, String)>, DefaultQuery(query): DefaultQuery<WikiPageQuery>) -> Response {
+	if page == "revisions" || page.starts_with("revisions/") || page == "discussions" || page.starts_with("discussions/") {
+		return StatusCode::NOT_FOUND.into_response();
+	}
 	respond(service.wiki_page(&subreddit, &page, &query).await)
 }
 
 async fn wiki_index(State(service): State<RedditService>, Path(subreddit): Path<String>, DefaultQuery(query): DefaultQuery<WikiPageQuery>) -> Response {
 	respond(service.wiki_page(&subreddit, "index", &query).await)
-}
-
-async fn wiki_revisions(State(service): State<RedditService>, Path(subreddit): Path<String>, ApiQuery(query): ApiQuery<ListingQuery>) -> Response {
-	respond(service.wiki_revisions(&subreddit, None, &query).await)
-}
-
-async fn wiki_page_revisions(State(service): State<RedditService>, Path((subreddit, page)): Path<(String, String)>, ApiQuery(query): ApiQuery<ListingQuery>) -> Response {
-	respond(service.wiki_revisions(&subreddit, Some(&page), &query).await)
-}
-
-async fn wiki_discussions(State(service): State<RedditService>, Path((subreddit, page)): Path<(String, String)>, ApiQuery(query): ApiQuery<ListingQuery>) -> Response {
-	respond(service.wiki_discussions(&subreddit, &page, &query).await)
 }
 
 async fn user_about(State(service): State<RedditService>, Path(username): Path<String>) -> Response {
@@ -172,30 +128,10 @@ async fn posts_by_id(State(service): State<RedditService>, Path(names): Path<Str
 	respond(service.posts_by_id(&names).await)
 }
 
-async fn post_duplicates(State(service): State<RedditService>, Path(article): Path<String>, ApiQuery(query): ApiQuery<DuplicateQuery>) -> Response {
-	respond(service.post_duplicates(&article, &query).await)
-}
-
-async fn info(State(service): State<RedditService>, DefaultQuery(query): DefaultQuery<InfoQuery>) -> Response {
-	respond(service.info(&query).await)
-}
-
-async fn subreddit_info(State(service): State<RedditService>, Path(subreddit): Path<String>, DefaultQuery(query): DefaultQuery<InfoQuery>) -> Response {
-	respond(service.subreddit_info(&subreddit, &query).await)
-}
-
-async fn user_overview(State(service): State<RedditService>, Path(username): Path<String>, ApiQuery(query): ApiQuery<UserHistoryQuery>) -> Response {
-	respond(service.user_overview(&username, &query).await)
-}
-
 async fn user_submitted(State(service): State<RedditService>, Path(username): Path<String>, ApiQuery(query): ApiQuery<UserHistoryQuery>) -> Response {
 	respond(service.user_submitted(&username, &query).await)
 }
 
 async fn user_comments(State(service): State<RedditService>, Path(username): Path<String>, ApiQuery(query): ApiQuery<UserHistoryQuery>) -> Response {
 	respond(service.user_comments(&username, &query).await)
-}
-
-async fn user_trophies(State(service): State<RedditService>, Path(username): Path<String>) -> Response {
-	respond(service.user_trophies(&username).await)
 }

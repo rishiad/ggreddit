@@ -28,14 +28,3 @@ pub struct WikiPageData {
 	#[serde(flatten)]
 	pub extra: Map<String, Value>,
 }
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct WikiRevision {
-	pub timestamp: Option<f64>,
-	pub reason: Option<String>,
-	pub author: Option<Thing<User>>,
-	pub page: String,
-	pub id: String,
-	#[serde(flatten)]
-	pub extra: Map<String, Value>,
-}

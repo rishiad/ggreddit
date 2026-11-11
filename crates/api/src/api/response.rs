@@ -49,13 +49,7 @@ fn service_status(error: &ServiceError) -> StatusCode {
 		ServiceError::ContentBlocked => StatusCode::FORBIDDEN,
 		ServiceError::Parse(_) | ServiceError::InvalidGraphqlComments => StatusCode::BAD_GATEWAY,
 		Client(ClientError::Unauthorized) => StatusCode::UNAUTHORIZED,
-		Client(ClientError::Quarantined | ClientError::Gated | ClientError::Private | ClientError::Banned | ClientError::Suspended) => StatusCode::FORBIDDEN,
 		Client(ClientError::RateLimited { .. }) => StatusCode::TOO_MANY_REQUESTS,
-		Client(ClientError::Reddit { code, .. }) => u16::try_from(*code)
-			.ok()
-			.and_then(|code| StatusCode::from_u16(code).ok())
-			.filter(StatusCode::is_client_error)
-			.unwrap_or(StatusCode::BAD_GATEWAY),
 		Client(_) => StatusCode::BAD_GATEWAY,
 	}
 }

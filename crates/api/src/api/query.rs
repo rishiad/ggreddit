@@ -4,7 +4,6 @@ use serde::de::DeserializeOwned;
 use std::convert::Infallible;
 
 pub(super) struct ApiQuery<T>(pub(super) T);
-
 pub(super) struct DefaultQuery<T>(pub(super) T);
 
 impl<S, T> FromRequestParts<S> for ApiQuery<T>

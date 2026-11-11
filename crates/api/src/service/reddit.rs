@@ -1,17 +1,13 @@
 use crate::client::RedditClient;
-use crate::models::{Listing, Post, PostComments, PostDuplicates, Subreddit, Thing, User};
-use crate::parsing::{parse_post_duplicates, parse_post_listing, parse_subreddit, parse_subreddit_listing, parse_user};
+use crate::models::{Listing, Post, PostComments, Subreddit, Thing, User};
+use crate::parsing::{parse_post_listing, parse_subreddit, parse_user};
 use crate::service::query_codec;
 use crate::service::sanitize::{clear_listing_modhash, clear_post_comments_modhash};
 use crate::service::{ContentPolicy, ServiceError};
-use std::sync::Arc;
-use tokio::sync::Semaphore;
-use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct RedditService {
 	pub(super) client: RedditClient,
-	pub(super) more_children_gate: Arc<Semaphore>,
 	pub(crate) content: ContentPolicy,
 }
 
@@ -21,22 +17,14 @@ impl RedditService {
 	}
 
 	pub fn with_content_policy(client: RedditClient, content: ContentPolicy) -> Self {
-		Self {
-			client,
-			more_children_gate: Arc::new(Semaphore::new(1)),
-			content,
-		}
-	}
-
-	pub async fn front_page_posts(&self, sort: PostSort, query: &ListingQuery) -> Result<Listing<Thing<Post>>, ServiceError> {
-		self.post_listing(None, sort, query).await
+		Self { client, content }
 	}
 
 	pub async fn all_posts(&self, sort: PostSort, query: &ListingQuery) -> Result<Listing<Thing<Post>>, ServiceError> {
 		if sort == PostSort::Best {
 			return Err(invalid_parameter("sort", sort.as_str()));
 		}
-		self.post_listing(Some("all"), sort, query).await
+		self.post_listing("all", sort, query).await
 	}
 
 	pub async fn subreddit_posts(&self, subreddit: &str, sort: PostSort, query: &ListingQuery) -> Result<Listing<Thing<Post>>, ServiceError> {
@@ -45,7 +33,7 @@ impl RedditService {
 		if sort == PostSort::Best {
 			return Err(invalid_parameter("sort", sort.as_str()));
 		}
-		self.post_listing(Some(subreddit), sort, query).await
+		self.post_listing(subreddit, sort, query).await
 	}
 
 	pub async fn posts_by_id(&self, names: &str) -> Result<Listing<Thing<Post>>, ServiceError> {
@@ -55,23 +43,6 @@ impl RedditService {
 		clear_listing_modhash(&mut listing);
 		self.content.filter_posts(&mut listing);
 		Ok(listing)
-	}
-
-	pub async fn post_duplicates(&self, article: &str, query: &DuplicateQuery) -> Result<PostDuplicates, ServiceError> {
-		validate_id36("article", article)?;
-		validate_listing_query(&query.listing)?;
-		if let Some(subreddit) = &query.subreddit {
-			validate_subreddit(subreddit)?;
-		}
-		let path = with_query(format!("/duplicates/{article}"), query_codec::encode(query));
-		let json = self.client.json(path).await?;
-		let mut duplicates = parse_post_duplicates(&json)?;
-		clear_listing_modhash(&mut duplicates.0);
-		clear_listing_modhash(&mut duplicates.1);
-		self.content.require_post_listing(&duplicates.0)?;
-		self.content.filter_posts(&mut duplicates.0);
-		self.content.filter_posts(&mut duplicates.1);
-		Ok(duplicates)
 	}
 
 	pub async fn post_comments(&self, article: &str, query: &CommentQuery) -> Result<PostComments, ServiceError> {
@@ -109,22 +80,9 @@ impl RedditService {
 		Ok(user)
 	}
 
-	pub async fn subreddits(&self, sort: SubredditSort, query: &ListingQuery) -> Result<Listing<Thing<Subreddit>>, ServiceError> {
+	async fn post_listing(&self, subreddit: &str, sort: PostSort, query: &ListingQuery) -> Result<Listing<Thing<Post>>, ServiceError> {
 		validate_listing_query(query)?;
-		let path = with_query(format!("/subreddits/{}", sort.as_str()), query_codec::encode(query));
-		let json = self.client.json(path).await?;
-		let mut listing = parse_subreddit_listing(&json)?;
-		clear_listing_modhash(&mut listing);
-		self.content.filter_subreddits(&mut listing);
-		Ok(listing)
-	}
-
-	async fn post_listing(&self, subreddit: Option<&str>, sort: PostSort, query: &ListingQuery) -> Result<Listing<Thing<Post>>, ServiceError> {
-		validate_listing_query(query)?;
-		let base = match subreddit {
-			Some(subreddit) => format!("/r/{}/{}", subreddit.replace('+', "%2B"), sort.as_str()),
-			None => format!("/{}", sort.as_str()),
-		};
+		let base = format!("/r/{}/{}", subreddit.replace('+', "%2B"), sort.as_str());
 		let path = with_query(base, query_codec::encode(query));
 		let json = self.client.json(path).await?;
 		let mut listing = parse_post_listing(&json)?;
@@ -177,10 +135,6 @@ pub(super) fn validate_listing_query(query: &ListingQuery) -> Result<(), Service
 	validate_listing_query_with(query, validate_cursor)
 }
 
-pub(super) fn validate_wiki_listing_query(query: &ListingQuery) -> Result<(), ServiceError> {
-	validate_listing_query_with(query, validate_wiki_cursor)
-}
-
 pub(super) fn validate_listing_query_with(query: &ListingQuery, cursor_validator: fn(&'static str, &str) -> Result<(), ServiceError>) -> Result<(), ServiceError> {
 	if query.after.is_some() && query.before.is_some() {
 		return Err(ServiceError::ConflictingCursors);
@@ -226,18 +180,6 @@ fn validate_cursor(parameter: &'static str, cursor: &str) -> Result<(), ServiceE
 			&& !id.is_empty()
 			&& id.bytes().all(|byte| byte.is_ascii_alphanumeric())
 	});
-	if valid {
-		Ok(())
-	} else {
-		Err(ServiceError::InvalidCursor {
-			parameter,
-			cursor: cursor.to_string(),
-		})
-	}
-}
-
-fn validate_wiki_cursor(parameter: &'static str, cursor: &str) -> Result<(), ServiceError> {
-	let valid = cursor.strip_prefix("WikiRevision_").is_some_and(|id| Uuid::parse_str(id).is_ok());
 	if valid {
 		Ok(())
 	} else {
@@ -359,27 +301,6 @@ mod comment_query {
 	}
 }
 
-mod duplicate_query {
-	use crate::service::ListingQuery;
-
-	#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-	#[serde(rename_all = "snake_case")]
-	pub enum DuplicateSort {
-		NumComments,
-		New,
-	}
-
-	#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-	pub struct DuplicateQuery {
-		#[serde(flatten)]
-		pub listing: ListingQuery,
-		pub crossposts_only: Option<bool>,
-		pub sort: Option<DuplicateSort>,
-		#[serde(rename = "sr")]
-		pub subreddit: Option<String>,
-	}
-}
-
 mod listing_query {
 
 	#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -485,27 +406,6 @@ mod post_sort {
 	}
 }
 
-mod subreddit_sort {
-	#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-	pub enum SubredditSort {
-		Popular,
-		New,
-		Default,
-	}
-
-	impl SubredditSort {
-		pub const fn as_str(self) -> &'static str {
-			match self {
-				Self::Popular => "popular",
-				Self::New => "new",
-				Self::Default => "default",
-			}
-		}
-	}
-}
-
 pub use comment_query::{CommentQuery, CommentSort, CommentTheme};
-pub use duplicate_query::{DuplicateQuery, DuplicateSort};
 pub use listing_query::{ListingQuery, ListingShow, ListingTime};
 pub use post_sort::PostSort;
-pub use subreddit_sort::SubredditSort;

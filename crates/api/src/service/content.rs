@@ -23,13 +23,6 @@ impl ContentPolicy {
 		}
 	}
 
-	pub(super) fn filter_subreddits(self, listing: &mut Listing<Thing<Subreddit>>) {
-		if !self.allow_nsfw {
-			listing.data.children.retain(|subreddit| subreddit.data.over18 != Some(true));
-			update_dist(listing);
-		}
-	}
-
 	pub(super) fn filter_public(self, listing: &mut Listing<PublicThing>) {
 		if !self.allow_nsfw {
 			listing.data.children.retain(public_thing_is_safe);

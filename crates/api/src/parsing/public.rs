@@ -16,18 +16,6 @@ fn parse_public_listing(json: &Value) -> Result<Listing<PublicThing>, ParseError
 	Ok(listing)
 }
 
-pub(crate) fn parse_info_listing(json: &Value) -> Result<Listing<PublicThing>, ParseError> {
-	let listing = parse_public_listing(json)?;
-	ensure_children(&listing, "info listing child", |child| !matches!(child, PublicThing::User(_)))?;
-	Ok(listing)
-}
-
-pub(crate) fn parse_user_overview_listing(json: &Value) -> Result<Listing<PublicThing>, ParseError> {
-	let listing = parse_public_listing(json)?;
-	ensure_children(&listing, "user overview child", |child| matches!(child, PublicThing::Comment(_) | PublicThing::Post(_)))?;
-	Ok(listing)
-}
-
 pub(crate) fn parse_user_comment_listing(json: &Value) -> Result<Listing<PublicThing>, ParseError> {
 	let listing = parse_public_listing(json)?;
 	ensure_children(&listing, "user comment child", |child| matches!(child, PublicThing::Comment(_)))?;

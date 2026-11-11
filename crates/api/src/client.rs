@@ -3,39 +3,27 @@ mod graphql;
 mod oauth;
 
 use axum::{body::Body, http::HeaderMap, response::Response};
-use percent_encoding::{percent_encode, CONTROLS};
 use serde_json::Value;
 use std::{result::Result, time::Duration};
 use tracing::{debug, trace, warn};
 use url::form_urlencoded;
 use wreq::redirect::Policy;
-use wreq::{header as wreq_header, Client as WreqClient, EmulationFactory, Method, Response as WreqResponse};
+use wreq::{header as wreq_header, Client as WreqClient, EmulationFactory, Response as WreqResponse};
 use wreq_util::{Emulation, EmulationOS, EmulationOption};
 
 use self::error::ClientError;
 pub use self::oauth::AuthError;
-use self::oauth::{CredentialLease, OAuthHandle};
+use self::oauth::OAuthHandle;
 
-const REDDIT_URL_BASE: &str = "https://oauth.reddit.com";
-const REDDIT_URL_BASE_HOST: &str = "oauth.reddit.com";
 const REDDIT_GRAPHQL_URL: &str = "https://gql-fed.reddit.com/";
 const POST_COMMENTS_HASH: &str = "314f29c2494fd78c7844ef2c6b09acb4bef5b37ab50b4ddc01691d6d5c8433f8";
 const MAX_UPSTREAM_BYTES: usize = 8 * 1024 * 1024;
-const MAX_REDDIT_REDIRECTS: usize = 4;
-
-const ALTERNATIVE_REDDIT_URL_BASE: &str = "https://www.reddit.com";
 
 #[derive(Clone)]
 pub struct RedditClient {
 	http: WreqClient,
 	oauth: OAuthHandle,
 	cache: Option<crate::storage::Cache>,
-}
-
-struct UpstreamResponse {
-	response: WreqResponse,
-	lease: CredentialLease,
-	rate_limit_reset: Option<String>,
 }
 
 impl RedditClient {
@@ -105,60 +93,7 @@ impl RedditClient {
 		response.into_http_response()
 	}
 
-	/// Makes a GET request to Reddit at `path`. By default, this will honor HTTP
-	/// 3xx codes Reddit returns and will automatically redirect.
-	async fn reddit_get(&self, path: String) -> Result<UpstreamResponse, ClientError> {
-		self.request(&Method::GET, with_raw_json(path), REDDIT_URL_BASE, REDDIT_URL_BASE_HOST).await
-	}
-
-	async fn request(&self, method: &Method, mut path: String, base_path: &str, host: &str) -> Result<UpstreamResponse, ClientError> {
-		for redirects in 0..=MAX_REDDIT_REDIRECTS {
-			let url = format!("{base_path}{path}");
-			let lease = self.oauth.acquire().await?;
-			let generation = lease.generation();
-			let mut headers = Vec::with_capacity(lease.headers().len() + 1);
-			headers.push(("Host", host));
-			headers.extend(lease.headers().iter().map(|(name, value)| (name.as_str(), value.as_str())));
-			fastrand::shuffle(&mut headers);
-
-			let mut builder = self.http.request(method.clone(), &url);
-			for (key, value) in headers {
-				builder = builder.header(key, value);
-			}
-			let result = builder.send().await;
-			let response = result.map_err(|source| ClientError::Request { url: url.clone(), source })?;
-			let rate_limit_reset = self.observe_rate_limit_headers(generation, &response).await;
-			if !response.status().is_redirection() {
-				return Ok(UpstreamResponse {
-					response,
-					lease,
-					rate_limit_reset,
-				});
-			}
-
-			let location = response
-				.headers()
-				.get(wreq::header::LOCATION)
-				.ok_or_else(|| ClientError::MissingRedirectLocation { path: path.clone() })?;
-			if location.to_str().ok() == Some(ALTERNATIVE_REDDIT_URL_BASE) {
-				return Err(ClientError::InvalidRedirect { path });
-			}
-			if redirects == MAX_REDDIT_REDIRECTS {
-				return Err(ClientError::TooManyRedirects { path });
-			}
-			path = percent_encode(location.as_bytes(), CONTROLS)
-				.to_string()
-				.trim_start_matches(REDDIT_URL_BASE)
-				.trim_start_matches(ALTERNATIVE_REDDIT_URL_BASE)
-				.to_string();
-			path = with_raw_json(path);
-			drop(response);
-			drop(lease);
-		}
-		Err(ClientError::TooManyRedirects { path })
-	}
-
-	/// Make a request to a Reddit API and parse the JSON response.
+	/// Dispatch a supported read through Reddit's persisted GraphQL queries.
 	pub async fn json(&self, path: String) -> Result<Value, ClientError> {
 		let Some(cache) = &self.cache else {
 			return self.fetch_json(path).await;
@@ -251,72 +186,7 @@ impl RedditClient {
 			}
 			return result;
 		}
-		let UpstreamResponse {
-			mut response,
-			lease,
-			rate_limit_reset,
-		} = self.reddit_get(path.clone()).await?;
-		let generation = lease.generation();
-		let status = response.status();
-		if response.content_length().is_some_and(|n| n > MAX_UPSTREAM_BYTES as u64) {
-			return Err(ClientError::BodyTooLarge);
-		}
-		let mut body = Vec::new();
-		while let Some(chunk) = response.chunk().await.map_err(|source| ClientError::Body { path: path.clone(), source })? {
-			append_body_chunk(&mut body, &chunk)?;
-		}
-		drop(lease);
-
-		if body.is_empty() {
-			self.oauth.invalidate(generation).await;
-			return Err(ClientError::RateLimited { reset: rate_limit_reset });
-		}
-		if status.as_u16() == 429 {
-			self.oauth.invalidate(generation).await;
-			return Err(ClientError::RateLimited { reset: rate_limit_reset });
-		}
-		if status.as_u16() == 401 {
-			self.oauth.invalidate(generation).await;
-			return Err(ClientError::Unauthorized);
-		}
-
-		let json: Value = serde_json::from_slice(&body).map_err(|source| {
-			warn!(event = "upstream.invalid_response", upstream = "reddit", status = status.as_u16(), error = %source, "Reddit returned invalid JSON");
-			if status.is_server_error() {
-				ClientError::UpstreamUnavailable { status: status.as_u16(), source }
-			} else {
-				ClientError::Decode { path: path.clone(), source }
-			}
-		})?;
-
-		if json["data"]["is_suspended"].as_bool() == Some(true) {
-			return Err(ClientError::Suspended);
-		}
-		validate_json_envelope(status.as_u16(), &json)?;
-
-		let Some(code) = json["error"].as_i64() else {
-			return Ok(json);
-		};
-		let reason = json["reason"].as_str().unwrap_or_default();
-		let message = json["message"].as_str().unwrap_or_default();
-		if message == "Unauthorized" {
-			debug!(event = "oauth.refresh_requested", reason = "unauthorized", "requesting OAuth refresh");
-			self.oauth.invalidate(generation).await;
-			return Err(ClientError::Unauthorized);
-		}
-
-		match reason {
-			"quarantined" => Err(ClientError::Quarantined),
-			"gated" => Err(ClientError::Gated),
-			"private" => Err(ClientError::Private),
-			"banned" => Err(ClientError::Banned),
-			_ => Err(ClientError::Reddit {
-				code,
-				reason: reason.to_string(),
-				message: message.to_string(),
-				path,
-			}),
-		}
+		Err(ClientError::UnsupportedPath { path })
 	}
 
 	async fn observe_rate_limit_headers(&self, generation: u64, response: &WreqResponse) -> Option<String> {
@@ -351,7 +221,7 @@ pub(crate) fn cache_key(path: &str) -> String {
 	// Stable key sort preserves the order of duplicate parameters.
 	pairs.sort_by(|a, b| a.0.cmp(&b.0));
 	let query = form_urlencoded::Serializer::new(String::new()).extend_pairs(pairs).finish();
-	format!("reddit-json-v1:{}", crate::storage::fingerprint(format!("{path}?{query}").as_bytes()))
+	format!("reddit-graphql-read-v1:{}", crate::storage::fingerprint(format!("{path}?{query}").as_bytes()))
 }
 
 fn cache_ttl(path: &str) -> i64 {
@@ -381,28 +251,6 @@ fn append_body_chunk(body: &mut Vec<u8>, chunk: &[u8]) -> Result<(), ClientError
 	}
 	body.extend_from_slice(chunk);
 	Ok(())
-}
-
-fn validate_json_envelope(status: u16, json: &Value) -> Result<(), ClientError> {
-	let numeric_error = json.get("error").is_some_and(Value::is_i64);
-	let error = json.get("error").is_some_and(|v| !v.is_null() && !v.is_i64());
-	let errors = json.get("errors").is_some_and(|v| !v.is_null() && v.as_array().is_none_or(|a| !a.is_empty()));
-	if (!(200..300).contains(&status) && !numeric_error) || error || errors {
-		return Err(ClientError::InvalidEnvelope);
-	}
-	Ok(())
-}
-
-fn with_raw_json(path: String) -> String {
-	let (base, query) = path.split_once('?').unwrap_or((&path, ""));
-	let mut serializer = form_urlencoded::Serializer::new(String::new());
-	for (key, value) in form_urlencoded::parse(query.as_bytes()) {
-		if key != "raw_json" {
-			serializer.append_pair(&key, &value);
-		}
-	}
-	serializer.append_pair("raw_json", "1");
-	format!("{base}?{}", serializer.finish())
 }
 
 trait IntoHttpResponse {

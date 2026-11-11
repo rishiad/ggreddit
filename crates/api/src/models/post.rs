@@ -32,6 +32,3 @@ pub struct Post {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PostComments(pub Listing<Thing<Post>>, pub Listing<CommentChild>);
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct PostDuplicates(pub Listing<Thing<Post>>, pub Listing<Thing<Post>>);

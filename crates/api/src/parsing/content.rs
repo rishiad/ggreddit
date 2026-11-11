@@ -1,4 +1,4 @@
-use crate::models::{CommentChild, CommentReplies, Listing, MoreChildren, Post, PostComments, PostDuplicates, Thing};
+use crate::models::{CommentChild, CommentReplies, Listing, Post, PostComments, Thing};
 use crate::parsing::core::{parse_listing, validate_listing_kind, validate_thing_kind};
 use crate::parsing::error::ParseError;
 use serde::Deserialize;
@@ -12,26 +12,10 @@ pub(crate) fn parse_comments(json: &Value) -> Result<PostComments, ParseError> {
 	Ok(comments)
 }
 
-pub(crate) fn parse_more_children(json: &Value) -> Result<MoreChildren, ParseError> {
-	let response = MoreChildren::deserialize(json).map_err(|source| ParseError::InvalidPayload { entity: "more children", source })?;
-	validate_comment_children(&response.json.data.things)?;
-	Ok(response)
-}
-
 pub(crate) fn parse_post_listing(json: &Value) -> Result<Listing<Thing<Post>>, ParseError> {
 	let listing = parse_listing(json)?;
 	validate_post_listing(&listing)?;
 	Ok(listing)
-}
-
-pub(crate) fn parse_post_duplicates(json: &Value) -> Result<PostDuplicates, ParseError> {
-	let duplicates = PostDuplicates::deserialize(json).map_err(|source| ParseError::InvalidPayload {
-		entity: "post duplicates",
-		source,
-	})?;
-	validate_post_listing(&duplicates.0)?;
-	validate_post_listing(&duplicates.1)?;
-	Ok(duplicates)
 }
 
 fn validate_post_listing(listing: &Listing<Thing<Post>>) -> Result<(), ParseError> {
