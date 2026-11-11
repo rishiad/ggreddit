@@ -53,7 +53,7 @@ fn service_status(error: &ServiceError) -> StatusCode {
 		| ServiceError::InvalidLimit { .. }
 		| ServiceError::InvalidParameter { .. } => StatusCode::BAD_REQUEST,
 		ServiceError::ContentBlocked => StatusCode::FORBIDDEN,
-		ServiceError::UnsupportedCombinedFeed | ServiceError::UnsupportedWikiRevision => StatusCode::NOT_IMPLEMENTED,
+		ServiceError::UnsupportedCombinedFeed | ServiceError::UnsupportedWikiRevision => StatusCode::BAD_REQUEST,
 		ServiceError::Parse(_) | ServiceError::InvalidGraphqlComments => StatusCode::BAD_GATEWAY,
 		Client(ClientError::Unauthorized) => StatusCode::UNAUTHORIZED,
 		Client(ClientError::RateLimited { .. }) => StatusCode::TOO_MANY_REQUESTS,

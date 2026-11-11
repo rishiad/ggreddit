@@ -15,7 +15,7 @@ use crate::{
 	view::{
 		activity_result, comment_sort_controls, comment_tree, community_view, feed_controls, feed_item, feed_pagination, gallery_view, generated_wiki_index,
 		has_public_wiki_pages, has_wiki_page, post_result, post_view, subreddit_feed_item, user_controls, user_profile, wiki_path, wiki_view, ActivityItem, FeedTemplate,
-		GalleryTemplate, MoreCommentsTemplate, PostContentTemplate, PostTemplate, SubredditTemplate, UserTemplate, WikiTemplate, MAX_HISTORY_BYTES, MAX_HISTORY_PAGES,
+		GalleryTemplate, MoreCommentsTemplate, PostContentTemplate, PostTemplate, SubredditTemplate, UserTemplate, WikiTemplate, MAX_HISTORY_BYTES,
 	},
 	ImageDisplay,
 };
@@ -38,8 +38,7 @@ impl FeedQuery {
 			Some(_) => return Err(AppError::InvalidPagination),
 			None => Vec::new(),
 		};
-		if history.len() > MAX_HISTORY_PAGES
-			|| history.first().is_some_and(|cursor| !cursor.is_empty())
+		if history.first().is_some_and(|cursor| !cursor.is_empty())
 			|| history.iter().skip(1).any(String::is_empty)
 			|| self.after.as_deref().is_some_and(str::is_empty)
 			|| (self.after.is_some() != !history.is_empty())

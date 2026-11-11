@@ -703,7 +703,6 @@ pub fn pagination(page: u32, previous_url: String, next_url: String) -> Paginati
 	}
 }
 
-pub(crate) const MAX_HISTORY_PAGES: usize = 16;
 pub(crate) const MAX_HISTORY_BYTES: usize = 2048;
 
 pub fn feed_pagination(base: &str, sort: &str, time: &str, history: &[String], current_after: Option<&str>, next_after: Option<&str>) -> Pagination {
@@ -713,7 +712,6 @@ pub fn feed_pagination(base: &str, sort: &str, time: &str, history: &[String], c
 	let mut next_history = history.to_vec();
 	next_history.push(current_after.unwrap_or_default().to_owned());
 	let next_url = next_after
-		.filter(|_| next_history.len() <= MAX_HISTORY_PAGES)
 		.and_then(|cursor| {
 			let json = serde_json::to_string(&next_history).ok()?;
 			(json.len() <= MAX_HISTORY_BYTES).then(|| listing_page_url(base, sort, time, Some(cursor), &next_history))

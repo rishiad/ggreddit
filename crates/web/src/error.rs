@@ -54,10 +54,10 @@ impl IntoResponse for AppError {
 			return response_with_description(StatusCode::FORBIDDEN, "This server has NSFW disabled.");
 		}
 		if matches!(&self, Self::Service(ServiceError::UnsupportedCombinedFeed)) {
-			return response_with_description(StatusCode::NOT_IMPLEMENTED, "Combined community feeds are not supported.");
+			return response_with_description(StatusCode::BAD_REQUEST, "Combined community feeds are not supported.");
 		}
 		if matches!(&self, Self::Service(ServiceError::UnsupportedWikiRevision)) {
-			return response_with_description(StatusCode::NOT_IMPLEMENTED, "Wiki revisions and diffs are not supported.");
+			return response_with_description(StatusCode::BAD_REQUEST, "Wiki revisions and diffs are not supported.");
 		}
 		let status = match self {
 			Self::InvalidPagination | Self::InvalidSort | Self::InvalidFeedTime | Self::InvalidCommentSort => StatusCode::BAD_REQUEST,
