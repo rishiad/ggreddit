@@ -15,9 +15,11 @@ RUN apt-get update \
     && apt-get install --yes --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 neddit \
-    && useradd --no-create-home --uid 10001 --gid 10001 --shell /usr/sbin/nologin neddit
+    && useradd --no-create-home --uid 10001 --gid 10001 --shell /usr/sbin/nologin neddit \
+    && install --directory --owner=neddit --group=neddit /var/cache/neddit
 
 COPY --from=build /src/target/release/neddit /usr/local/bin/neddit
+COPY container.toml /etc/neddit/config.toml
 USER neddit:neddit
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/neddit"]

@@ -31,7 +31,7 @@ in
       default = {
         server.listen = "127.0.0.1:8080";
       };
-      description = "Neddit settings written to its TOML configuration file.";
+      description = "Neddit settings written to its TOML configuration file. Set domains.media explicitly to proxy images and Reddit videos.";
     };
 
     mediaKeyFile = lib.mkOption {
@@ -54,7 +54,6 @@ in
         RestartSec = 5;
 
         DynamicUser = true;
-        StateDirectory = "neddit";
         CacheDirectory = "neddit";
         AmbientCapabilities = "";
         CapabilityBoundingSet = "";

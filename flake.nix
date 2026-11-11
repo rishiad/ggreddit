@@ -33,13 +33,16 @@
 
         src = lib.cleanSourceWith {
           src = craneLib.path ./.;
-          filter = craneLib.filterCargoSources;
+          filter = path: type:
+            craneLib.filterCargoSources path type
+            || lib.any (extension: lib.hasSuffix extension path) [ ".html" ".css" ".js" ];
         };
 
         package = { cargoExtraArgs }: craneLib.buildPackage {
           inherit src;
           strictDeps = true;
-          doCheck = false;
+          doCheck = true;
+          checkPhaseCargoCommand = "cargo test --locked --workspace";
 
           inherit cargoExtraArgs;
           CARGO_BUILD_TARGET = "x86_64-unknown-linux-musl";

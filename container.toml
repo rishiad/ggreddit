@@ -1,0 +1,6 @@
+# Standalone container defaults. Supply a custom config to enable media domains.
+[server]
+listen = "0.0.0.0:8080"
+
+[cache]
+path = "/var/cache/neddit/cache.sqlite"
