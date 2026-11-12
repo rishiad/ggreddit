@@ -13,8 +13,8 @@ use ammonia::{Builder, UrlRelative};
 use askama::Template;
 use askama_web::WebTemplate;
 
-use neddit_api::media::MediaSigner;
-use neddit_api::models::{Post, PublicThing, Subreddit, User, WikiPage, WikiPageListing};
+use ggreddit_api::media::MediaSigner;
+use ggreddit_api::models::{Post, PublicThing, Subreddit, User, WikiPage, WikiPageListing};
 use serde_json::Value;
 use url::{form_urlencoded, Url};
 
@@ -329,7 +329,7 @@ fn feed_item_with_video(post: &Post, signer: &MediaSigner) -> FeedItem {
 #[cfg(test)]
 mod video_tests {
 	use super::*;
-	use neddit_api::media::DomainPolicy;
+	use ggreddit_api::media::DomainPolicy;
 	use serde_json::json;
 
 	#[test]
@@ -465,7 +465,7 @@ fn author_path(author: &str) -> String {
 	if author.is_empty() || author == "[deleted]" {
 		return String::new();
 	}
-	let mut url = Url::parse("http://neddit.local").expect("static base URL is valid");
+	let mut url = Url::parse("http://ggreddit.local").expect("static base URL is valid");
 	url.path_segments_mut().expect("HTTP URLs support path segments").extend(["user", author]);
 	url.path().to_owned()
 }
@@ -736,7 +736,7 @@ fn listing_page_url(base: &str, sort: &str, time: &str, cursor: Option<&str>, hi
 }
 
 pub(crate) fn wiki_path(subreddit: &str, page: &str) -> String {
-	let mut url = Url::parse("http://neddit.local").expect("static base URL is valid");
+	let mut url = Url::parse("http://ggreddit.local").expect("static base URL is valid");
 	{
 		let mut segments = url.path_segments_mut().expect("HTTP URLs support path segments");
 		segments.extend(["r", subreddit, "wiki"]);
@@ -755,7 +755,7 @@ fn safe_outbound(value: &str, signer: &MediaSigner) -> Option<String> {
 
 fn local_web_navigation(value: &str, signer: &MediaSigner) -> Option<String> {
 	let local = signer.rewrite_navigation(value)?;
-	let base = Url::parse("http://neddit.local").expect("static base URL is valid");
+	let base = Url::parse("http://ggreddit.local").expect("static base URL is valid");
 	let url = base.join(&local).ok()?;
 	let segments: Vec<_> = url.path_segments()?.filter(|segment| !segment.is_empty()).collect();
 

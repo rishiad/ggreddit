@@ -37,7 +37,7 @@ impl Database {
 		}
 		let (sender, mut receiver) = mpsc::channel::<Job>(64);
 		let (ready, opened) = oneshot::channel();
-		std::thread::Builder::new().name("neddit-sqlite".into()).spawn(move || {
+		std::thread::Builder::new().name("ggreddit-sqlite".into()).spawn(move || {
 			let connection = (|| {
 				if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
 					std::fs::create_dir_all(parent)?;

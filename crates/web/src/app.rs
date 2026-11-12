@@ -2,7 +2,7 @@ use axum::{
 	extract::{Path, Query, State},
 	response::{IntoResponse, Redirect, Response},
 };
-use neddit_api::{
+use ggreddit_api::{
 	media::MediaSigner,
 	models::{Post, PostComments},
 	service::{CommentQuery, CommentSort, ListingQuery, ListingTime, PostSort, RedditService, ServiceError, UserHistoryQuery, UserHistorySort, WikiPageQuery},

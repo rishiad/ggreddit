@@ -2,9 +2,9 @@
 set -eu
 
 exec cargo watch \
-  --watch crates/neddit \
+  --watch crates/ggreddit \
   --watch crates/web \
   --watch crates/api \
   --watch Cargo.toml \
   --watch Cargo.lock \
-  --exec 'run -p neddit --locked -- --config "$PWD/config.toml"'
+  --exec 'run -p ggreddit --locked -- --config "$PWD/config.toml"'

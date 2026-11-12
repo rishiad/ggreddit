@@ -27,7 +27,7 @@ const MANIFEST_SIZE_LIMIT: usize = 8 * 1024 * 1024;
 const MAX_MEDIA_REDIRECTS: usize = 4;
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 const MEDIA_CACHE_CONTROL: &str = "public, max-age=604800, immutable";
-const HTTP_TARGET: &str = "neddit::http";
+const HTTP_TARGET: &str = "ggreddit::http";
 const REQUEST_ID_HEADER: &str = "x-request-id";
 
 #[derive(Clone, Debug)]

@@ -1,5 +1,5 @@
 [package]
-name = "neddit"
+name = "ggreddit"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,8 +14,8 @@ clap = { version = "4.4.11", default-features = false, features = [
 	"help",
 	"usage",
 ] }
-neddit-api.workspace = true
-neddit-web = { path = "../web" }
+ggreddit-api.workspace = true
+ggreddit-web = { path = "../web" }
 serde.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

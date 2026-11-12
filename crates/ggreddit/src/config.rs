@@ -7,9 +7,9 @@ use std::{
 use serde::Deserialize;
 use thiserror::Error;
 
-use neddit_api::media::{DomainPolicy, MediaUrlError};
-use neddit_api::storage::CacheConfig;
-use neddit_web::ImageDisplay;
+use ggreddit_api::media::{DomainPolicy, MediaUrlError};
+use ggreddit_api::storage::CacheConfig;
+use ggreddit_web::ImageDisplay;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]

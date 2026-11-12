@@ -1,5 +1,5 @@
 use super::{SelectChoice, SortControls};
-use neddit_api::service::ListingTime;
+use ggreddit_api::service::ListingTime;
 
 pub fn feed_controls(action: &str, active_sort: &'static str, active_time: &str, include_controversial: bool) -> SortControls {
 	let mut sorts = vec![("hot", "Hot"), ("new", "New"), ("rising", "Rising"), ("top", "Top")];

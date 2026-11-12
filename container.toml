@@ -3,4 +3,4 @@
 listen = "0.0.0.0:8080"
 
 [cache]
-path = "/var/cache/neddit/cache.sqlite"
+path = "/var/cache/ggreddit/cache.sqlite"

@@ -5,7 +5,7 @@ use axum::{
 	middleware::Next,
 	response::{Html, IntoResponse, Response},
 };
-use neddit_api::service::ServiceError;
+use ggreddit_api::service::ServiceError;
 use thiserror::Error;
 
 const ERROR_DESCRIPTIONS: &[(u16, &str)] = &[

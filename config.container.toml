@@ -14,8 +14,8 @@ media = [
 
 [media]
 image_display = "inline"
-signing_key_file = "/run/neddit/media.key"
+signing_key_file = "/run/ggreddit/media.key"
 
 [cache]
-path = "/var/cache/neddit/cache.sqlite"
+path = "/var/cache/ggreddit/cache.sqlite"
 max_bytes = 268435456

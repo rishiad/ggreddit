@@ -7,23 +7,23 @@
 }:
 
 let
-  cfg = config.services.neddit;
+  cfg = config.services.ggreddit;
   format = pkgs.formats.toml { };
   settings = lib.recursiveUpdate (lib.recursiveUpdate {
-    cache.path = "/var/cache/neddit/cache.sqlite";
+    cache.path = "/var/cache/ggreddit/cache.sqlite";
   } cfg.settings) (lib.optionalAttrs (cfg.mediaKeyFile != null) {
-    media.signing_key_file = "/run/credentials/neddit.service/media-key";
+    media.signing_key_file = "/run/credentials/ggreddit.service/media-key";
   });
-  configFile = format.generate "neddit.toml" settings;
+  configFile = format.generate "ggreddit.toml" settings;
 in
 {
-  options.services.neddit = {
+  options.services.ggreddit = {
     enable = lib.mkEnableOption "Private Reddit frontend";
 
     package = lib.mkOption {
       type = lib.types.package;
       default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
-      description = "The Neddit package to run.";
+      description = "The ggreddit package to run.";
     };
 
     settings = lib.mkOption {
@@ -31,7 +31,7 @@ in
       default = {
         server.listen = "127.0.0.1:8080";
       };
-      description = "Neddit settings written to its TOML configuration file. Set domains.media explicitly to proxy images and Reddit videos.";
+      description = "ggreddit settings written to its TOML configuration file. Set domains.media explicitly to proxy images and Reddit videos.";
     };
 
     mediaKeyFile = lib.mkOption {
@@ -42,19 +42,19 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    systemd.services.neddit = {
-      description = "Neddit";
+    systemd.services.ggreddit = {
+      description = "ggreddit";
       wantedBy = [ "multi-user.target" ];
       wants = [ "network-online.target" ];
       after = [ "network-online.target" ];
       serviceConfig = {
         Type = "exec";
-        ExecStart = "${cfg.package}/bin/neddit --config ${configFile}";
+        ExecStart = "${cfg.package}/bin/ggreddit --config ${configFile}";
         Restart = "on-failure";
         RestartSec = 5;
 
         DynamicUser = true;
-        CacheDirectory = "neddit";
+        CacheDirectory = "ggreddit";
         AmbientCapabilities = "";
         CapabilityBoundingSet = "";
         LockPersonality = true;

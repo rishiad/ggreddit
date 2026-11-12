@@ -1,5 +1,5 @@
 {
-  description = "Neddit: Private Reddit-compatible read service";
+  description = "ggreddit: Private Reddit-compatible read service";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -49,21 +49,21 @@
           CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
         };
 
-        neddit = package {
-          cargoExtraArgs = "-p neddit";
+        ggreddit = package {
+          cargoExtraArgs = "-p ggreddit";
         };
       in
       {
         checks = {
-          inherit neddit;
+          inherit ggreddit;
         };
 
         packages = {
-          default = neddit;
-          inherit neddit;
+          default = ggreddit;
+          inherit ggreddit;
         };
       }) // {
         nixosModules.default = import ./nix/module.nix { inherit self; };
-        nixosModules.neddit = self.nixosModules.default;
+        nixosModules.ggreddit = self.nixosModules.default;
       };
 }

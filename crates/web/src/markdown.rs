@@ -1,4 +1,4 @@
-use neddit_api::media::MediaSigner;
+use ggreddit_api::media::MediaSigner;
 use pulldown_cmark::{html, CowStr, Event, LinkType, Options, Parser, Tag, TagEnd, TextMergeStream};
 use serde_json::Value;
 use url::Url;
@@ -40,7 +40,7 @@ pub fn render(source: &str, metadata: Option<&Value>, signer: &MediaSigner, imag
 fn preprocess(source: &str) -> (String, Markers) {
 	let mut nonce = 0_u32;
 	let markers = loop {
-		let marker = |name| format!("\u{e000}neddit-{nonce}-{name}\u{e001}");
+		let marker = |name| format!("\u{e000}ggreddit-{nonce}-{name}\u{e001}");
 		let markers = Markers {
 			spoiler_open: marker("spoiler-open"),
 			spoiler_close: marker("spoiler-close"),

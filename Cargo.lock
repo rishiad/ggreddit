@@ -1128,13 +1128,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "neddit"
+name = "ggreddit"
 version = "0.1.0"
 dependencies = [
  "axum",
  "clap",
- "neddit-api",
- "neddit-web",
+ "ggreddit-api",
+ "ggreddit-web",
  "serde",
  "thiserror",
  "tokio",
@@ -1144,7 +1144,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "neddit-api"
+name = "ggreddit-api"
 version = "0.1.0"
 dependencies = [
  "ammonia",
@@ -1173,14 +1173,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "neddit-web"
+name = "ggreddit-web"
 version = "0.1.0"
 dependencies = [
  "ammonia",
  "askama",
  "askama_web",
  "axum",
- "neddit-api",
+ "ggreddit-api",
  "pulldown-cmark",
  "serde",
  "serde_json",

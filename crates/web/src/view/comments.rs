@@ -1,6 +1,6 @@
 use super::{age, author_path, compact, display_author, signed_compact, CommentTreeEvent, CommentView};
 use crate::markdown;
-use neddit_api::models::{Comment, CommentChild, CommentReplies, More};
+use ggreddit_api::models::{Comment, CommentChild, CommentReplies, More};
 use url::form_urlencoded;
 
 pub fn comment_tree(children: &[CommentChild], link_id: &str, sort: &str, renderer: markdown::Renderer<'_>) -> Vec<CommentTreeEvent> {

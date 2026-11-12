@@ -7,9 +7,9 @@ Usage: scripts/setup.sh [--engine docker|podman] [--data-dir DIR]
                         [--config FILE] [--image IMAGE] [--name NAME]
                         [--port PORT] [--no-build]
 
-Build and start Neddit. The default config is copied to DATA_DIR/config.toml
+Build and start ggreddit. The default config is copied to DATA_DIR/config.toml
 only once. Custom configs must listen on 0.0.0.0:8080 and use the container
-paths /run/neddit/media.key and /var/cache/neddit/cache.sqlite.
+paths /run/ggreddit/media.key and /var/cache/ggreddit/cache.sqlite.
 The default port binds to localhost; put a reverse proxy in front if needed.
 Run as a non-root host user with access to the container engine.
 EOF
@@ -19,8 +19,8 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 engine=docker
 data_dir="$root/data/container"
 config=
-image=neddit:local
-name=neddit
+image=ggreddit:local
+name=ggreddit
 port=8080
 build=1
 
@@ -74,13 +74,13 @@ if [ "$build" -eq 1 ]; then
 fi
 
 "$engine" run --rm \
-	--mount "type=bind,source=$config,target=/etc/neddit/config.toml,readonly" \
+	--mount "type=bind,source=$config,target=/etc/ggreddit/config.toml,readonly" \
 	"$image" --check-config
 
 "$engine" run --detach --name "$name" --restart unless-stopped \
 	--user "$(id -u):$(id -g)" \
 	--publish "127.0.0.1:$port:8080" \
-	--mount "type=bind,source=$config,target=/etc/neddit/config.toml,readonly" \
-	--mount "type=bind,source=$key,target=/run/neddit/media.key,readonly" \
-	--mount "type=bind,source=$data_dir/cache,target=/var/cache/neddit" \
+	--mount "type=bind,source=$config,target=/etc/ggreddit/config.toml,readonly" \
+	--mount "type=bind,source=$key,target=/run/ggreddit/media.key,readonly" \
+	--mount "type=bind,source=$data_dir/cache,target=/var/cache/ggreddit" \
 	"$image"

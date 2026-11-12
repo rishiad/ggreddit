@@ -15,7 +15,7 @@ use axum::{
 	routing::get,
 	Router,
 };
-use neddit_api::{media::MediaSigner, server::MediaProxy, service::RedditService};
+use ggreddit_api::{media::MediaSigner, server::MediaProxy, service::RedditService};
 use serde::{Deserialize, Serialize};
 use tower_http::compression::CompressionLayer;
 #[cfg(debug_assertions)]
@@ -90,7 +90,7 @@ pub fn router(service: RedditService, media: MediaProxy, image_display: ImageDis
 	let app = app
 		.with_state(state)
 		.merge(system_routes())
-		.merge(neddit_api::server::with_middleware(neddit_api::server::router(media)));
+		.merge(ggreddit_api::server::with_middleware(ggreddit_api::server::router(media)));
 	#[cfg(debug_assertions)]
 	let app = app.layer(LiveReloadLayer::new());
 	app.layer(CompressionLayer::new()).layer(middleware::from_fn(security_headers))

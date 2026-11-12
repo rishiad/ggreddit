@@ -3,8 +3,8 @@
 use std::{env, io::IsTerminal as _, path::PathBuf};
 
 use clap::Parser;
-use neddit::config::{Config, LogFormat, LoggingConfig};
-use neddit_api::{
+use ggreddit::config::{Config, LogFormat, LoggingConfig};
+use ggreddit_api::{
 	client::RedditClient,
 	media::MediaSigner,
 	server,
@@ -16,7 +16,7 @@ use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Parser)]
-#[command(name = "Neddit", version, about = "Private Reddit-compatible read service")]
+#[command(name = "ggreddit", version, about = "Private Reddit-compatible read service")]
 struct Args {
 	#[arg(short, long, value_name = "FILE", help = "Read configuration from this TOML file")]
 	config: Option<PathBuf>,
@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 		web = config.server.web,
 		api = config.server.api,
 		allow_nsfw = config.server.allow_nsfw,
-		"starting neddit"
+		"starting ggreddit"
 	);
 	let listener = server::bind(&config.server.listen).await?;
 	let address = listener.local_addr()?;
@@ -62,16 +62,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 	let reddit = RedditClient::new().await?.with_cache(cache.clone());
 	let service = RedditService::with_content_policy(reddit.clone(), ContentPolicy::new(config.server.allow_nsfw));
 	let media = MediaProxy::new(reddit.clone(), signer);
-	let app = neddit::router(service, &media, config.media.image_display, config.server.web, config.server.api);
+	let app = ggreddit::router(service, &media, config.media.image_display, config.server.web, config.server.api);
 
-	info!(event = "service.ready", %address, version = env!("CARGO_PKG_VERSION"), "neddit is ready");
+	info!(event = "service.ready", %address, version = env!("CARGO_PKG_VERSION"), "ggreddit is ready");
 	let result = server::serve(app, listener).await;
 	if let Err(error) = &result {
 		error!(event = "service.failed", %error, "HTTP server failed");
 	}
 	reddit.shutdown().await;
 	if result.is_ok() {
-		info!(event = "service.stopped", "neddit stopped");
+		info!(event = "service.stopped", "ggreddit stopped");
 	}
 	result?;
 	Ok(())
