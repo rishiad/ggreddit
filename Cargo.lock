@@ -681,6 +681,70 @@ dependencies = [
 ]
 
 [[package]]
+name = "ggreddit"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "clap",
+ "ggreddit-api",
+ "ggreddit-web",
+ "serde",
+ "thiserror",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "ggreddit-api"
+version = "0.1.0"
+dependencies = [
+ "ammonia",
+ "axum",
+ "base64",
+ "chrono",
+ "fake_user_agent",
+ "fastrand",
+ "getrandom",
+ "hmac",
+ "pulldown-cmark",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "tower-http 0.7.1",
+ "tracing",
+ "url",
+ "uuid",
+ "wreq",
+ "wreq-util",
+]
+
+[[package]]
+name = "ggreddit-web"
+version = "0.1.0"
+dependencies = [
+ "ammonia",
+ "askama",
+ "askama_web",
+ "axum",
+ "ggreddit-api",
+ "pulldown-cmark",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tower-http 0.7.1",
+ "tower-livereload",
+ "url",
+]
+
+[[package]]
 name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1125,70 +1189,6 @@ dependencies = [
  "libc",
  "wasi 0.11.0+wasi-snapshot-preview1",
  "windows-sys",
-]
-
-[[package]]
-name = "ggreddit"
-version = "0.1.0"
-dependencies = [
- "axum",
- "clap",
- "ggreddit-api",
- "ggreddit-web",
- "serde",
- "thiserror",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "ggreddit-api"
-version = "0.1.0"
-dependencies = [
- "ammonia",
- "axum",
- "base64",
- "chrono",
- "fake_user_agent",
- "fastrand",
- "getrandom",
- "hmac",
- "pulldown-cmark",
- "regex",
- "rusqlite",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "sha2",
- "thiserror",
- "tokio",
- "tower-http 0.7.1",
- "tracing",
- "url",
- "uuid",
- "wreq",
- "wreq-util",
-]
-
-[[package]]
-name = "ggreddit-web"
-version = "0.1.0"
-dependencies = [
- "ammonia",
- "askama",
- "askama_web",
- "axum",
- "ggreddit-api",
- "pulldown-cmark",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tower-http 0.7.1",
- "tower-livereload",
- "url",
 ]
 
 [[package]]

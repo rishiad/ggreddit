@@ -964,6 +964,11 @@ a:focus-visible {
   margin-top: 0.25rem;
 }
 
+.error-page .request-id {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
 .wiki-index {
   display: grid;
   margin-bottom: 0.75em;

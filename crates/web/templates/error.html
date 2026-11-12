@@ -6,5 +6,8 @@
   <article class="error-page">
     <h1 class="error-code">{{ code }}</h1>
     <p>{{ description }}</p>
+    {% if let Some(request_id) = request_id %}
+      <p class="request-id">Request ID: <code>{{ request_id }}</code></p>
+    {% endif %}
   </article>
 {% endblock %}

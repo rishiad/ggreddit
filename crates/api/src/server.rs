@@ -31,10 +31,10 @@ const HTTP_TARGET: &str = "ggreddit::http";
 const REQUEST_ID_HEADER: &str = "x-request-id";
 
 #[derive(Clone, Debug)]
-pub(crate) struct RequestId(String);
+pub struct RequestId(String);
 
 impl RequestId {
-	pub(crate) fn as_str(&self) -> &str {
+	pub fn as_str(&self) -> &str {
 		&self.0
 	}
 }
