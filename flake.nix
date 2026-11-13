@@ -1,5 +1,5 @@
 {
-  description = "ggreddit: Private Reddit-compatible read service";
+  description = "ggreddit: anonymous reddit reader";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -53,6 +53,17 @@
         ggreddit = package {
           cargoExtraArgs = "-p ggreddit";
         };
+
+        release = pkgs.runCommandNoCC "ggreddit-release-0.1.0" {
+          src = pkgs.fetchurl {
+            url = "https://github.com/rishiad/ggreddit/releases/download/v0.1.0/ggreddit-x86_64-linux-musl.tar.gz";
+            hash = "sha256-hepsG0QKz/c+5T8MKJXGyYprT+ICkUBbthQkX1jw7VE=";
+          };
+          nativeBuildInputs = [ pkgs.gnutar pkgs.gzip ];
+        } ''
+          mkdir -p "$out/bin"
+          tar -xzf "$src" -C "$out/bin" ggreddit
+        '';
       in
       {
         checks = {
@@ -61,7 +72,7 @@
 
         packages = {
           default = ggreddit;
-          inherit ggreddit;
+          inherit ggreddit release;
         };
       }) // {
         nixosModules.default = import ./nix/module.nix { inherit self; };
