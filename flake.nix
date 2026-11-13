@@ -40,6 +40,7 @@
 
         package = { cargoExtraArgs }: craneLib.buildPackage {
           inherit src;
+          pname = "ggreddit";
           strictDeps = true;
           doCheck = true;
           checkPhaseCargoCommand = "cargo test --locked --workspace";
