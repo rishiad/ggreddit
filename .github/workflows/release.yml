@@ -31,7 +31,12 @@ jobs:
           rustup target add x86_64-unknown-linux-musl
       - name: Build x86_64 Linux binary
         run: |
-          printf '%s\n' '#!/bin/sh' 'exec zig c++ -target x86_64-linux-musl "$@"' > "$RUNNER_TEMP/musl-cxx"
+          printf '%s\n' '#!/usr/bin/env bash' \
+            'args=()' \
+            'for arg in "$@"; do' \
+            '  args+=("${arg/x86_64-unknown-linux-musl/x86_64-linux-musl}")' \
+            'done' \
+            'exec zig c++ -target x86_64-linux-musl "${args[@]}"' > "$RUNNER_TEMP/musl-cxx"
           chmod +x "$RUNNER_TEMP/musl-cxx"
           export CXX="$RUNNER_TEMP/musl-cxx"
           cargo build --release --locked --target x86_64-unknown-linux-musl -p ggreddit
