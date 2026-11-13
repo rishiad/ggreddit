@@ -34,7 +34,10 @@ jobs:
           printf '%s\n' '#!/usr/bin/env bash' \
             'args=()' \
             'for arg in "$@"; do' \
-            '  args+=("${arg/x86_64-unknown-linux-musl/x86_64-linux-musl}")' \
+            '  if [[ "$arg" == "--target=x86_64-unknown-linux-musl" ]]; then' \
+            '    arg=--target=x86_64-linux-musl' \
+            '  fi' \
+            '  args+=("$arg")' \
             'done' \
             'exec zig c++ -target x86_64-linux-musl "${args[@]}"' > "$RUNNER_TEMP/musl-cxx"
           chmod +x "$RUNNER_TEMP/musl-cxx"
